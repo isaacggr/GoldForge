@@ -175,7 +175,14 @@ public class Transaction {
     }
 
     public String getGoalTitle() {
-        return this.goal != null ? this.goal.getTitle() : null;
+        if (this.goal == null) {
+            return null;
+        }
+        try {
+            return this.goal.getTitle();
+        } catch (org.hibernate.LazyInitializationException e) {
+            return null;
+        }
     }
 
     public void setGoalContributionId(UUID goalContributionId) {

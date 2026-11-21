@@ -80,6 +80,20 @@ public class GoalContribution {
         this.transaction = transaction;
     }
 
+    public void update(BigDecimal amount, LocalDate contributionDate, String note) {
+        BigDecimal normalizedAmount = Transaction.normalizeMonetaryAmount(amount);
+        if (normalizedAmount == null || normalizedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("O valor do aporte deve ser maior que zero");
+        }
+        this.amount = normalizedAmount;
+        if (contributionDate != null) {
+            this.contributionDate = contributionDate;
+        }
+        if (note != null) {
+            this.note = Goal.normalizeOptionalText(note);
+        }
+    }
+
     @PrePersist
     protected void onCreate() {
         if (this.createdAt == null) {

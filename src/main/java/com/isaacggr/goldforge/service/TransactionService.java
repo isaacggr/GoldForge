@@ -214,9 +214,9 @@ public class TransactionService {
 
         if (transaction.getGoal() != null) {
             BigDecimal diff = amount.subtract(transaction.getAmount());
-            if (diff.compareTo(BigDecimal.ZERO) != 0) {
-                goalContributionRepository.findByTransactionId(transactionId).ifPresent(gc -> {
-                    Goal goal = gc.getGoal();
+            goalContributionRepository.findByTransactionId(transactionId).ifPresent(gc -> {
+                Goal goal = gc.getGoal();
+                if (diff.compareTo(BigDecimal.ZERO) != 0) {
                     if (gc.getType() == GoalContributionType.WITHDRAWAL) {
                         if (diff.compareTo(BigDecimal.ZERO) > 0) {
                             goal.applyWithdrawal(diff);
@@ -231,8 +231,10 @@ public class TransactionService {
                         }
                     }
                     goalRepository.save(goal);
-                });
-            }
+                }
+                gc.update(amount, date, description);
+                goalContributionRepository.save(gc);
+            });
         }
 
         transaction.update(amount, type, category, date, description);

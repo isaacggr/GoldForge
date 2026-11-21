@@ -5,6 +5,8 @@ import com.isaacggr.goldforge.domain.enums.TransactionType;
 import com.isaacggr.goldforge.dto.dashboard.CategoryExpenseDTO;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -19,11 +21,17 @@ import java.util.UUID;
 public interface TransactionRepository extends JpaRepository<Transaction, UUID>, JpaSpecificationExecutor<Transaction> {
 
     // 🔍 Buscar transação por ID e ID do Usuário (Prevenção de IDOR)
+    @EntityGraph(attributePaths = {"goal", "installmentGroup"})
     Optional<Transaction> findByIdAndUserId(UUID id, UUID userId);
+
+    @Override
+    @EntityGraph(attributePaths = {"goal", "installmentGroup"})
+    Page<Transaction> findAll(Specification<Transaction> spec, Pageable pageable);
 
     boolean existsByUserIdAndDateAndType(UUID userId, LocalDate date, TransactionType type);
 
     // 📄 Listar transações de um usuário (paginação simples legada)
+    @EntityGraph(attributePaths = {"goal", "installmentGroup"})
     Page<Transaction> findByUserId(UUID userId, Pageable pageable);
 
     // 📊 Soma total por tipo (INCOME ou EXPENSE) em um intervalo de datas
