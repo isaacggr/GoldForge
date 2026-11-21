@@ -40,6 +40,13 @@ public class Transaction {
     @Column(name = "total_installments")
     private Integer totalInstallments;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "goal_id")
+    private Goal goal;
+
+    @Column(name = "goal_contribution_id")
+    private UUID goalContributionId;
+
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal amount;
 
@@ -87,6 +94,22 @@ public class Transaction {
             Integer installmentNumber,
             Integer totalInstallments) {
 
+        this(user, amount, type, category, date, description, installmentGroup, installmentNumber, totalInstallments, null, null);
+    }
+
+    public Transaction(
+            User user,
+            BigDecimal amount,
+            TransactionType type,
+            String category,
+            LocalDate date,
+            String description,
+            InstallmentGroup installmentGroup,
+            Integer installmentNumber,
+            Integer totalInstallments,
+            Goal goal,
+            UUID goalContributionId) {
+
         this.user = user;
         this.amount = normalizeMonetaryAmount(amount);
         this.type = type;
@@ -96,6 +119,8 @@ public class Transaction {
         this.installmentGroup = installmentGroup;
         this.installmentNumber = installmentNumber;
         this.totalInstallments = totalInstallments;
+        this.goal = goal;
+        this.goalContributionId = goalContributionId;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }
@@ -143,6 +168,18 @@ public class Transaction {
 
     public boolean isInstallment() {
         return this.installmentGroup != null;
+    }
+
+    public UUID getGoalId() {
+        return this.goal != null ? this.goal.getId() : null;
+    }
+
+    public String getGoalTitle() {
+        return this.goal != null ? this.goal.getTitle() : null;
+    }
+
+    public void setGoalContributionId(UUID goalContributionId) {
+        this.goalContributionId = goalContributionId;
     }
 
     public static BigDecimal normalizeMonetaryAmount(BigDecimal amount) {

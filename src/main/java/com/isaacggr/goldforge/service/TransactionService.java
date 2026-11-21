@@ -1,11 +1,16 @@
 package com.isaacggr.goldforge.service;
 
+import com.isaacggr.goldforge.domain.entity.Goal;
+import com.isaacggr.goldforge.domain.entity.GoalContribution;
 import com.isaacggr.goldforge.domain.entity.InstallmentGroup;
 import com.isaacggr.goldforge.domain.entity.Transaction;
 import com.isaacggr.goldforge.domain.entity.User;
+import com.isaacggr.goldforge.domain.enums.GoalContributionType;
 import com.isaacggr.goldforge.domain.enums.TransactionType;
 import com.isaacggr.goldforge.exception.ConflictException;
 import com.isaacggr.goldforge.exception.NotFoundException;
+import com.isaacggr.goldforge.repository.GoalContributionRepository;
+import com.isaacggr.goldforge.repository.GoalRepository;
 import com.isaacggr.goldforge.repository.TransactionRepository;
 import com.isaacggr.goldforge.repository.specification.TransactionSpecification;
 import org.springframework.data.domain.Page;
@@ -28,13 +33,19 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final BudgetAlertEvaluator budgetAlertEvaluator;
+    private final GoalContributionRepository goalContributionRepository;
+    private final GoalRepository goalRepository;
 
     public TransactionService(
             TransactionRepository transactionRepository,
-            BudgetAlertEvaluator budgetAlertEvaluator
+            BudgetAlertEvaluator budgetAlertEvaluator,
+            GoalContributionRepository goalContributionRepository,
+            GoalRepository goalRepository
     ) {
         this.transactionRepository = transactionRepository;
         this.budgetAlertEvaluator = budgetAlertEvaluator;
+        this.goalContributionRepository = goalContributionRepository;
+        this.goalRepository = goalRepository;
     }
 
     // ======================
@@ -62,6 +73,22 @@ public class TransactionService {
             Integer installmentNumber,
             Integer totalInstallments
     ) {
+        return create(user, amount, type, category, date, description, installmentGroup, installmentNumber, totalInstallments, null, null);
+    }
+
+    public Transaction create(
+            User user,
+            BigDecimal amount,
+            TransactionType type,
+            String category,
+            LocalDate date,
+            String description,
+            InstallmentGroup installmentGroup,
+            Integer installmentNumber,
+            Integer totalInstallments,
+            Goal goal,
+            UUID goalContributionId
+    ) {
         if (user == null || !user.isActive()) {
             throw new NotFoundException("Usuário não encontrado");
         }
@@ -83,7 +110,9 @@ public class TransactionService {
                 description,
                 installmentGroup,
                 installmentNumber,
-                totalInstallments
+                totalInstallments,
+                goal,
+                goalContributionId
         );
 
         Transaction saved = transactionRepository.save(transaction);
@@ -183,6 +212,29 @@ public class TransactionService {
             throw new ConflictException("Data da transação é obrigatória");
         }
 
+        if (transaction.getGoal() != null) {
+            BigDecimal diff = amount.subtract(transaction.getAmount());
+            if (diff.compareTo(BigDecimal.ZERO) != 0) {
+                goalContributionRepository.findByTransactionId(transactionId).ifPresent(gc -> {
+                    Goal goal = gc.getGoal();
+                    if (gc.getType() == GoalContributionType.WITHDRAWAL) {
+                        if (diff.compareTo(BigDecimal.ZERO) > 0) {
+                            goal.applyWithdrawal(diff);
+                        } else {
+                            goal.applyContribution(diff.abs());
+                        }
+                    } else {
+                        if (diff.compareTo(BigDecimal.ZERO) > 0) {
+                            goal.applyContribution(diff);
+                        } else {
+                            goal.revertContribution(diff.abs());
+                        }
+                    }
+                    goalRepository.save(goal);
+                });
+            }
+        }
+
         transaction.update(amount, type, category, date, description);
         if (transaction.getType() == TransactionType.EXPENSE) {
             budgetAlertEvaluator.evaluateFor(transaction.getUser(), transaction.getCategory(), transaction.getDate());
@@ -195,6 +247,18 @@ public class TransactionService {
     // ======================
     public void delete(UUID transactionId, UUID userId) {
         Transaction transaction = findById(transactionId, userId);
+
+        goalContributionRepository.findByTransactionId(transactionId).ifPresent(gc -> {
+            Goal goal = gc.getGoal();
+            if (gc.getType() == GoalContributionType.WITHDRAWAL) {
+                goal.applyContribution(gc.getAmount());
+            } else {
+                goal.revertContribution(gc.getAmount());
+            }
+            goalRepository.save(goal);
+            goalContributionRepository.delete(gc);
+        });
+
         transactionRepository.delete(transaction);
     }
 }

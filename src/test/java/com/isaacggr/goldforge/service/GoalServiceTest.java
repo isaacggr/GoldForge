@@ -2,16 +2,22 @@ package com.isaacggr.goldforge.service;
 
 import com.isaacggr.goldforge.domain.entity.Goal;
 import com.isaacggr.goldforge.domain.entity.GoalContribution;
+import com.isaacggr.goldforge.domain.entity.Transaction;
 import com.isaacggr.goldforge.domain.entity.User;
+import com.isaacggr.goldforge.domain.enums.GoalContributionType;
 import com.isaacggr.goldforge.domain.enums.GoalStatus;
+import com.isaacggr.goldforge.domain.enums.TransactionType;
 import com.isaacggr.goldforge.dto.goal.GoalContributionCreateDTO;
 import com.isaacggr.goldforge.dto.goal.GoalContributionResponseDTO;
 import com.isaacggr.goldforge.dto.goal.GoalCreateDTO;
 import com.isaacggr.goldforge.dto.goal.GoalResponseDTO;
 import com.isaacggr.goldforge.dto.goal.GoalUpdateDTO;
+import com.isaacggr.goldforge.dto.goal.GoalWithdrawRequestDTO;
+import com.isaacggr.goldforge.exception.ConflictException;
 import com.isaacggr.goldforge.exception.NotFoundException;
 import com.isaacggr.goldforge.repository.GoalContributionRepository;
 import com.isaacggr.goldforge.repository.GoalRepository;
+import com.isaacggr.goldforge.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,6 +53,12 @@ class GoalServiceTest {
     @Mock
     private GamificationService gamificationService;
 
+    @Mock
+    private TransactionService transactionService;
+
+    @Mock
+    private TransactionRepository transactionRepository;
+
     @InjectMocks
     private GoalService goalService;
 
@@ -72,6 +84,20 @@ class GoalServiceTest {
                 true
         );
         ReflectionTestUtils.setField(sampleGoal, "id", goalId);
+
+        lenient().when(transactionService.create(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    Transaction tx = new Transaction(
+                            inv.getArgument(0),
+                            inv.getArgument(1),
+                            inv.getArgument(2),
+                            inv.getArgument(3),
+                            inv.getArgument(4),
+                            inv.getArgument(5)
+                    );
+                    ReflectionTestUtils.setField(tx, "id", UUID.randomUUID());
+                    return tx;
+                });
     }
 
     @Test
@@ -318,5 +344,111 @@ class GoalServiceTest {
 
         assertEquals(GoalStatus.COMPLETED, response.goal().status());
         verify(notificationService).notifyGoalCompleted(sampleUser, sampleGoal);
+    }
+
+    @Test
+    @DisplayName("Deve realizar saque parcial da meta gerando transação de entrada (INCOME) e reduzindo saldo da meta")
+    void withdraw_Partial_Success_ReducesGoalAndCreatesIncomeTransaction() {
+        sampleGoal.applyContribution(new BigDecimal("2000.00"));
+        when(goalRepository.findByIdAndUserId(goalId, userId)).thenReturn(Optional.of(sampleGoal));
+        when(goalContributionRepository.save(any(GoalContribution.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(goalRepository.save(any(Goal.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GoalWithdrawRequestDTO dto = new GoalWithdrawRequestDTO(
+                new BigDecimal("600.00"),
+                LocalDate.of(2026, 11, 21),
+                "Manutenção do carro",
+                false
+        );
+
+        GoalContributionResponseDTO response = goalService.withdraw(goalId, userId, dto);
+
+        assertNotNull(response);
+        assertEquals(GoalContributionType.WITHDRAWAL, response.type());
+        assertEquals(new BigDecimal("600.00"), response.amount());
+        assertEquals(new BigDecimal("1400.00"), response.goal().currentAmount());
+        assertEquals(GoalStatus.IN_PROGRESS, response.goal().status());
+
+        verify(transactionService).create(
+                eq(sampleUser),
+                eq(new BigDecimal("600.00")),
+                eq(TransactionType.INCOME),
+                eq("RESGATE DE META"),
+                eq(LocalDate.of(2026, 11, 21)),
+                eq("Resgate: " + sampleGoal.getTitle()),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(sampleGoal),
+                isNull()
+        );
+    }
+
+    @Test
+    @DisplayName("Deve lançar ConflictException quando valor do saque exceder o saldo acumulado da meta")
+    void withdraw_ThrowsConflict_WhenAmountExceedsCurrentAmount() {
+        sampleGoal.applyContribution(new BigDecimal("500.00"));
+        when(goalRepository.findByIdAndUserId(goalId, userId)).thenReturn(Optional.of(sampleGoal));
+
+        GoalWithdrawRequestDTO dto = new GoalWithdrawRequestDTO(
+                new BigDecimal("800.00"),
+                null,
+                "Tentativa excessiva",
+                false
+        );
+
+        ConflictException ex = assertThrows(ConflictException.class, () -> goalService.withdraw(goalId, userId, dto));
+        assertTrue(ex.getMessage().contains("Saldo insuficiente"));
+    }
+
+    @Test
+    @DisplayName("Deve marcar meta como REALIZED (troféu) quando resgate total for solicitado")
+    void withdraw_MarksAsRealized_WhenRequested() {
+        sampleGoal.applyContribution(new BigDecimal("4000.00"));
+        when(goalRepository.findByIdAndUserId(goalId, userId)).thenReturn(Optional.of(sampleGoal));
+        when(goalContributionRepository.save(any(GoalContribution.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(goalRepository.save(any(Goal.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GoalWithdrawRequestDTO dto = new GoalWithdrawRequestDTO(
+                new BigDecimal("4000.00"),
+                null,
+                "Sonho realizado!",
+                true
+        );
+
+        GoalContributionResponseDTO response = goalService.withdraw(goalId, userId, dto);
+
+        assertEquals(GoalStatus.REALIZED, response.goal().status());
+        assertEquals(new BigDecimal("0.00"), response.goal().currentAmount());
+    }
+
+    @Test
+    @DisplayName("Deve reverter movimentação de saque devolvendo saldo à meta e excluindo transação correspondente")
+    void deleteContribution_WhenWithdrawal_RevertsAmountAndDeletesTransaction() {
+        sampleGoal.applyContribution(new BigDecimal("2000.00"));
+        sampleGoal.applyWithdrawal(new BigDecimal("500.00"));
+        assertEquals(new BigDecimal("1500.00"), sampleGoal.getCurrentAmount());
+
+        UUID contribId = UUID.randomUUID();
+        Transaction linkedTx = new Transaction(sampleUser, new BigDecimal("500.00"), TransactionType.INCOME, "RESGATE DE META", LocalDate.now(), "Resgate");
+        GoalContribution withdrawal = new GoalContribution(
+                sampleGoal,
+                new BigDecimal("500.00"),
+                LocalDate.now(),
+                "Saque",
+                GoalContributionType.WITHDRAWAL,
+                linkedTx
+        );
+        ReflectionTestUtils.setField(withdrawal, "id", contribId);
+
+        when(goalContributionRepository.findByIdAndGoalIdAndGoalUserId(contribId, goalId, userId))
+                .thenReturn(Optional.of(withdrawal));
+
+        goalService.deleteContribution(goalId, contribId, userId);
+
+        assertEquals(new BigDecimal("2000.00"), sampleGoal.getCurrentAmount());
+        verify(goalContributionRepository).delete(withdrawal);
+        verify(goalRepository).save(sampleGoal);
+        verify(transactionRepository).delete(linkedTx);
     }
 }

@@ -12,4 +12,6 @@ public interface GoalContributionRepository extends JpaRepository<GoalContributi
     List<GoalContribution> findByGoalIdOrderByContributionDateDescCreatedAtDesc(UUID goalId);
 
     Optional<GoalContribution> findByIdAndGoalIdAndGoalUserId(UUID id, UUID goalId, UUID userId);
+
+    Optional<GoalContribution> findByTransactionId(UUID transactionId);
 }
