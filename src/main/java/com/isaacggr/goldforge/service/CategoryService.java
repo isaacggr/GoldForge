@@ -34,6 +34,8 @@ public class CategoryService {
             new DefaultCategory("INVESTIMENTOS", "Investimentos", TransactionType.INCOME),
             new DefaultCategory("VENDAS", "Vendas", TransactionType.INCOME),
             new DefaultCategory("REEMBOLSO", "Reembolso", TransactionType.INCOME),
+            new DefaultCategory("RESGATE DE META", "Resgate de Meta", TransactionType.INCOME),
+            new DefaultCategory("METAS", "Metas", TransactionType.SAVINGS),
             new DefaultCategory("OUTROS", "Outros", null)
     );
 

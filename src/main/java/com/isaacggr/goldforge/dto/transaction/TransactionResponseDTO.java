@@ -35,7 +35,13 @@ public record TransactionResponseDTO(
         Integer installmentNumber,
 
         @Schema(description = "Total de parcelas da compra", example = "10")
-        Integer totalInstallments
+        Integer totalInstallments,
+
+        @Schema(description = "ID da meta vinculada (se for aporte ou resgate de meta)", example = "7f7bc86e-9be7-4a0b-8d59-2c78a05c75bf")
+        UUID goalId,
+
+        @Schema(description = "Título da meta vinculada", example = "Reserva de Emergência")
+        String goalTitle
 ) {
     public TransactionResponseDTO(
             UUID id,
@@ -45,7 +51,21 @@ public record TransactionResponseDTO(
             LocalDate date,
             String description
     ) {
-        this(id, amount, type, category, date, description, null, null, null);
+        this(id, amount, type, category, date, description, null, null, null, null, null);
+    }
+
+    public TransactionResponseDTO(
+            UUID id,
+            BigDecimal amount,
+            TransactionType type,
+            String category,
+            LocalDate date,
+            String description,
+            UUID installmentGroupId,
+            Integer installmentNumber,
+            Integer totalInstallments
+    ) {
+        this(id, amount, type, category, date, description, installmentGroupId, installmentNumber, totalInstallments, null, null);
     }
 
     public static TransactionResponseDTO fromEntity(Transaction transaction) {
@@ -58,7 +78,9 @@ public record TransactionResponseDTO(
                 transaction.getDescription(),
                 transaction.getInstallmentGroupId(),
                 transaction.getInstallmentNumber(),
-                transaction.getTotalInstallments()
+                transaction.getTotalInstallments(),
+                transaction.getGoalId(),
+                transaction.getGoalTitle()
         );
     }
 }

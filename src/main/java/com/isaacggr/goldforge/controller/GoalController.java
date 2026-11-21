@@ -6,6 +6,7 @@ import com.isaacggr.goldforge.dto.goal.GoalContributionResponseDTO;
 import com.isaacggr.goldforge.dto.goal.GoalCreateDTO;
 import com.isaacggr.goldforge.dto.goal.GoalResponseDTO;
 import com.isaacggr.goldforge.dto.goal.GoalUpdateDTO;
+import com.isaacggr.goldforge.dto.goal.GoalWithdrawRequestDTO;
 import com.isaacggr.goldforge.exception.ErrorResponse;
 import com.isaacggr.goldforge.service.GoalService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -135,6 +136,29 @@ public class GoalController {
         URI location = ServletUriComponentsBuilder
                 .fromCurrentRequest()
                 .path("/{contributionId}")
+                .buildAndExpand(response.id())
+                .toUri();
+        return ResponseEntity.created(location).body(response);
+    }
+
+    @PostMapping("/{goalId}/withdrawals")
+    @Operation(summary = "Resgatar / sacar valor da meta", description = "Realiza saque parcial ou resgate total da meta, creditando o valor no saldo do usuário e marcando opcionalmente como realizada (troféu)")
+    @ApiResponse(responseCode = "201", description = "Saque realizado com sucesso")
+    @ApiResponse(responseCode = "400", description = "Dados inválidos informados",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "Meta financeira não encontrada para o usuário autenticado",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "Saldo insuficiente na meta para realizar o saque",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    public ResponseEntity<GoalContributionResponseDTO> withdraw(
+            @PathVariable @Parameter(description = "Identificador único (UUID) da meta", example = "6fa85f64-5717-4562-b3fc-2c963f66afa6") UUID goalId,
+            @RequestBody @Valid GoalWithdrawRequestDTO dto,
+            @AuthenticationPrincipal User user
+    ) {
+        GoalContributionResponseDTO response = goalService.withdraw(goalId, user.getId(), dto);
+        URI location = ServletUriComponentsBuilder
+                .fromCurrentRequest()
+                .path("/{id}")
                 .buildAndExpand(response.id())
                 .toUri();
         return ResponseEntity.created(location).body(response);
