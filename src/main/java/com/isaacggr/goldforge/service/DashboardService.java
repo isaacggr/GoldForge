@@ -63,7 +63,10 @@ public class DashboardService {
         BigDecimal totalExpense = coalesceZero(transactionRepository
                 .sumAmountByTypeAndPeriod(userId, TransactionType.EXPENSE, effectiveStartDate, effectiveEndDate));
 
-        BigDecimal balance = normalizeScale(totalIncome.subtract(totalExpense));
+        BigDecimal totalSavings = coalesceZero(transactionRepository
+                .sumAmountByTypeAndPeriod(userId, TransactionType.SAVINGS, effectiveStartDate, effectiveEndDate));
+
+        BigDecimal balance = normalizeScale(totalIncome.subtract(totalExpense).subtract(totalSavings));
 
         List<CategoryExpenseDTO> expensesByCategory = transactionRepository
                 .sumAmountByCategory(userId, TransactionType.EXPENSE, effectiveStartDate, effectiveEndDate);
@@ -78,7 +81,10 @@ public class DashboardService {
         BigDecimal previousExpense = coalesceZero(transactionRepository
                 .sumAmountByTypeAndPeriod(userId, TransactionType.EXPENSE, prevStart, prevEnd));
 
-        BigDecimal previousBalance = normalizeScale(previousIncome.subtract(previousExpense));
+        BigDecimal previousSavings = coalesceZero(transactionRepository
+                .sumAmountByTypeAndPeriod(userId, TransactionType.SAVINGS, prevStart, prevEnd));
+
+        BigDecimal previousBalance = normalizeScale(previousIncome.subtract(previousExpense).subtract(previousSavings));
 
         DashboardSummaryDTO.PreviousPeriod previous = new DashboardSummaryDTO.PreviousPeriod(
                 prevStart,
@@ -180,6 +186,7 @@ public class DashboardService {
     ) {
         Map<LocalDate, BigDecimal> incomeMap = new HashMap<>();
         Map<LocalDate, BigDecimal> expenseMap = new HashMap<>();
+        Map<LocalDate, BigDecimal> savingsMap = new HashMap<>();
 
         if (rows != null) {
             for (TransactionRepository.DailyAggregate row : rows) {
@@ -187,6 +194,8 @@ public class DashboardService {
                     incomeMap.merge(row.date(), coalesceZero(row.total()), BigDecimal::add);
                 } else if (row.type() == TransactionType.EXPENSE) {
                     expenseMap.merge(row.date(), coalesceZero(row.total()), BigDecimal::add);
+                } else if (row.type() == TransactionType.SAVINGS) {
+                    savingsMap.merge(row.date(), coalesceZero(row.total()), BigDecimal::add);
                 }
             }
         }
@@ -197,7 +206,8 @@ public class DashboardService {
         for (LocalDate cursor = startDate; !cursor.isAfter(endDate); cursor = cursor.plusDays(1)) {
             BigDecimal income = normalizeScale(incomeMap.getOrDefault(cursor, BigDecimal.ZERO));
             BigDecimal expense = normalizeScale(expenseMap.getOrDefault(cursor, BigDecimal.ZERO));
-            BigDecimal balance = normalizeScale(income.subtract(expense));
+            BigDecimal savings = normalizeScale(savingsMap.getOrDefault(cursor, BigDecimal.ZERO));
+            BigDecimal balance = normalizeScale(income.subtract(expense).subtract(savings));
             cumulative = normalizeScale(cumulative.add(balance));
 
             points.add(new DashboardTimeseriesDTO.Point(
@@ -220,6 +230,7 @@ public class DashboardService {
     ) {
         Map<YearMonth, BigDecimal> incomeMap = new HashMap<>();
         Map<YearMonth, BigDecimal> expenseMap = new HashMap<>();
+        Map<YearMonth, BigDecimal> savingsMap = new HashMap<>();
 
         if (rows != null) {
             for (TransactionRepository.DailyAggregate row : rows) {
@@ -228,6 +239,8 @@ public class DashboardService {
                     incomeMap.merge(ym, coalesceZero(row.total()), BigDecimal::add);
                 } else if (row.type() == TransactionType.EXPENSE) {
                     expenseMap.merge(ym, coalesceZero(row.total()), BigDecimal::add);
+                } else if (row.type() == TransactionType.SAVINGS) {
+                    savingsMap.merge(ym, coalesceZero(row.total()), BigDecimal::add);
                 }
             }
         }
@@ -241,7 +254,8 @@ public class DashboardService {
         for (YearMonth cursor = startYm; !cursor.isAfter(endYm); cursor = cursor.plusMonths(1)) {
             BigDecimal income = normalizeScale(incomeMap.getOrDefault(cursor, BigDecimal.ZERO));
             BigDecimal expense = normalizeScale(expenseMap.getOrDefault(cursor, BigDecimal.ZERO));
-            BigDecimal balance = normalizeScale(income.subtract(expense));
+            BigDecimal savings = normalizeScale(savingsMap.getOrDefault(cursor, BigDecimal.ZERO));
+            BigDecimal balance = normalizeScale(income.subtract(expense).subtract(savings));
             cumulative = normalizeScale(cumulative.add(balance));
 
             points.add(new DashboardTimeseriesDTO.Point(

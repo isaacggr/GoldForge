@@ -47,6 +47,10 @@ public class Goal {
     @Column(name = "is_primary", nullable = false)
     private boolean primary = false;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private GoalStatus status = GoalStatus.IN_PROGRESS;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -110,6 +114,11 @@ public class Goal {
     public void applyContribution(BigDecimal amount) {
         BigDecimal normalized = normalizePositiveAmount(amount, "O valor do aporte deve ser maior que zero");
         this.currentAmount = Transaction.normalizeMonetaryAmount(this.currentAmount.add(normalized));
+        if (this.status != GoalStatus.REALIZED) {
+            this.status = this.currentAmount.compareTo(this.targetAmount) >= 0
+                    ? GoalStatus.COMPLETED
+                    : GoalStatus.IN_PROGRESS;
+        }
     }
 
     public void revertContribution(BigDecimal amount) {
@@ -118,6 +127,29 @@ public class Goal {
         this.currentAmount = updated.compareTo(BigDecimal.ZERO) > 0
                 ? Transaction.normalizeMonetaryAmount(updated)
                 : Transaction.normalizeMonetaryAmount(BigDecimal.ZERO);
+        if (this.status != GoalStatus.REALIZED) {
+            this.status = this.currentAmount.compareTo(this.targetAmount) >= 0
+                    ? GoalStatus.COMPLETED
+                    : GoalStatus.IN_PROGRESS;
+        }
+    }
+
+    public void applyWithdrawal(BigDecimal amount) {
+        BigDecimal normalized = normalizePositiveAmount(amount, "O valor do saque deve ser maior que zero");
+        if (this.currentAmount.compareTo(normalized) < 0) {
+            throw new IllegalArgumentException("Saldo insuficiente na meta para realizar o saque");
+        }
+        this.currentAmount = Transaction.normalizeMonetaryAmount(this.currentAmount.subtract(normalized));
+        if (this.status != GoalStatus.REALIZED) {
+            this.status = this.currentAmount.compareTo(this.targetAmount) >= 0
+                    ? GoalStatus.COMPLETED
+                    : GoalStatus.IN_PROGRESS;
+        }
+    }
+
+    public void markAsRealized() {
+        this.status = GoalStatus.REALIZED;
+        this.updatedAt = LocalDateTime.now();
     }
 
     public BigDecimal getRemainingAmount() {
@@ -140,13 +172,17 @@ public class Goal {
     }
 
     public GoalStatus getStatus() {
+        if (this.status == GoalStatus.REALIZED) {
+            return GoalStatus.REALIZED;
+        }
         return this.currentAmount.compareTo(this.targetAmount) >= 0
                 ? GoalStatus.COMPLETED
                 : GoalStatus.IN_PROGRESS;
     }
 
     public boolean isCompleted() {
-        return getStatus() == GoalStatus.COMPLETED;
+        GoalStatus currentStatus = getStatus();
+        return currentStatus == GoalStatus.COMPLETED || currentStatus == GoalStatus.REALIZED;
     }
 
     private static String normalizeRequiredTitle(String title) {

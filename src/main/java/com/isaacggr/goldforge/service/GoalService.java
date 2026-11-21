@@ -2,19 +2,26 @@ package com.isaacggr.goldforge.service;
 
 import com.isaacggr.goldforge.domain.entity.Goal;
 import com.isaacggr.goldforge.domain.entity.GoalContribution;
+import com.isaacggr.goldforge.domain.entity.Transaction;
 import com.isaacggr.goldforge.domain.entity.User;
+import com.isaacggr.goldforge.domain.enums.GoalContributionType;
+import com.isaacggr.goldforge.domain.enums.TransactionType;
 import com.isaacggr.goldforge.dto.goal.GoalContributionCreateDTO;
 import com.isaacggr.goldforge.dto.goal.GoalContributionResponseDTO;
 import com.isaacggr.goldforge.dto.goal.GoalCreateDTO;
 import com.isaacggr.goldforge.dto.goal.GoalResponseDTO;
 import com.isaacggr.goldforge.dto.goal.GoalUpdateDTO;
+import com.isaacggr.goldforge.dto.goal.GoalWithdrawRequestDTO;
+import com.isaacggr.goldforge.exception.ConflictException;
 import com.isaacggr.goldforge.exception.NotFoundException;
 import com.isaacggr.goldforge.repository.GoalContributionRepository;
 import com.isaacggr.goldforge.repository.GoalRepository;
+import com.isaacggr.goldforge.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,17 +34,23 @@ public class GoalService {
     private final GoalContributionRepository goalContributionRepository;
     private final NotificationService notificationService;
     private final GamificationService gamificationService;
+    private final TransactionService transactionService;
+    private final TransactionRepository transactionRepository;
 
     public GoalService(
             GoalRepository goalRepository,
             GoalContributionRepository goalContributionRepository,
             NotificationService notificationService,
-            GamificationService gamificationService
+            GamificationService gamificationService,
+            TransactionService transactionService,
+            TransactionRepository transactionRepository
     ) {
         this.goalRepository = goalRepository;
         this.goalContributionRepository = goalContributionRepository;
         this.notificationService = notificationService;
         this.gamificationService = gamificationService;
+        this.transactionService = transactionService;
+        this.transactionRepository = transactionRepository;
     }
 
     /**
@@ -66,11 +79,19 @@ public class GoalService {
 
         if (dto.initialAmount() != null && dto.initialAmount().compareTo(BigDecimal.ZERO) > 0) {
             savedGoal.applyContribution(dto.initialAmount());
-            goalContributionRepository.save(
-                    new GoalContribution(savedGoal, dto.initialAmount(), null, "Aporte inicial")
+
+            LocalDate initialDate = LocalDate.now(GoalContribution.DEFAULT_ZONE);
+            GoalContribution contribution = new GoalContribution(
+                    savedGoal,
+                    dto.initialAmount(),
+                    initialDate,
+                    "Saldo inicial pré-existente",
+                    GoalContributionType.CONTRIBUTION,
+                    null
             );
+            goalContributionRepository.save(contribution);
+
             savedGoal = goalRepository.save(savedGoal);
-            gamificationService.onGoalContribution(savedGoal.getUser(), savedGoal.getCurrentAmount(), savedGoal.isCompleted());
         }
 
         if (savedGoal.isCompleted()) {
@@ -130,6 +151,25 @@ public class GoalService {
     public void delete(UUID goalId, UUID userId) {
         Goal goal = findOwnedGoal(goalId, userId);
         boolean wasPrimary = goal.isPrimary();
+
+        // 1. Busca todas as movimentações financeiras geradas por esta meta
+        List<Transaction> linkedTransactions = transactionRepository.findByGoalId(goalId);
+
+        // 2. Desvincula e remove as contribuições registradas na meta
+        List<GoalContribution> contributions = goalContributionRepository.findByGoalIdOrderByContributionDateDescCreatedAtDesc(goalId);
+        for (GoalContribution contribution : contributions) {
+            contribution.attachTransaction(null);
+        }
+        goalContributionRepository.deleteAll(contributions);
+        goalContributionRepository.flush();
+
+        // 3. Exclui definitivamente as transações vinculadas (revertendo SAVINGS e restaurando o saldo do mês)
+        if (!linkedTransactions.isEmpty()) {
+            transactionRepository.deleteAll(linkedTransactions);
+            transactionRepository.flush();
+        }
+
+        // 4. Remove a meta
         goalRepository.delete(goal);
 
         if (wasPrimary) {
@@ -144,15 +184,36 @@ public class GoalService {
     public GoalContributionResponseDTO addContribution(UUID goalId, UUID userId, GoalContributionCreateDTO dto) {
         Goal goal = findOwnedGoal(goalId, userId);
 
+        LocalDate effectiveDate = (dto.contributionDate() != null)
+                ? dto.contributionDate()
+                : LocalDate.now(GoalContribution.DEFAULT_ZONE);
+
+        Transaction tx = transactionService.create(
+                goal.getUser(),
+                dto.amount(),
+                TransactionType.SAVINGS,
+                "METAS",
+                effectiveDate,
+                "Aporte: " + goal.getTitle(),
+                null,
+                null,
+                null,
+                goal,
+                null
+        );
+
         GoalContribution contribution = new GoalContribution(
                 goal,
                 dto.amount(),
-                dto.contributionDate(),
-                dto.note()
+                effectiveDate,
+                dto.note(),
+                GoalContributionType.CONTRIBUTION,
+                tx
         );
         goal.applyContribution(contribution.getAmount());
 
         GoalContribution savedContribution = goalContributionRepository.save(contribution);
+        tx.setGoalContributionId(savedContribution.getId());
         Goal savedGoal = goalRepository.save(goal);
 
         gamificationService.onGoalContribution(savedGoal.getUser(), savedGoal.getCurrentAmount(), savedGoal.isCompleted());
@@ -162,6 +223,56 @@ public class GoalService {
         }
 
         return GoalContributionResponseDTO.fromEntityWithGoal(savedContribution, savedGoal);
+    }
+
+    public GoalContributionResponseDTO withdraw(UUID goalId, UUID userId, GoalWithdrawRequestDTO dto) {
+        Goal goal = findOwnedGoal(goalId, userId);
+
+        if (dto.amount() == null || dto.amount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ConflictException("Valor do saque deve ser maior que zero");
+        }
+
+        if (goal.getCurrentAmount().compareTo(dto.amount()) < 0) {
+            throw new ConflictException("Saldo insuficiente na meta para realizar o saque");
+        }
+
+        LocalDate effectiveDate = (dto.withdrawalDate() != null)
+                ? dto.withdrawalDate()
+                : LocalDate.now(GoalContribution.DEFAULT_ZONE);
+
+        Transaction tx = transactionService.create(
+                goal.getUser(),
+                dto.amount(),
+                TransactionType.INCOME,
+                "RESGATE DE META",
+                effectiveDate,
+                "Resgate: " + goal.getTitle(),
+                null,
+                null,
+                null,
+                goal,
+                null
+        );
+
+        GoalContribution withdrawal = new GoalContribution(
+                goal,
+                dto.amount(),
+                effectiveDate,
+                dto.note(),
+                GoalContributionType.WITHDRAWAL,
+                tx
+        );
+        goal.applyWithdrawal(withdrawal.getAmount());
+
+        if (Boolean.TRUE.equals(dto.realizeGoal()) || (goal.getCurrentAmount().compareTo(BigDecimal.ZERO) == 0 && goal.isCompleted())) {
+            goal.markAsRealized();
+        }
+
+        GoalContribution savedWithdrawal = goalContributionRepository.save(withdrawal);
+        tx.setGoalContributionId(savedWithdrawal.getId());
+        Goal savedGoal = goalRepository.save(goal);
+
+        return GoalContributionResponseDTO.fromEntityWithGoal(savedWithdrawal, savedGoal);
     }
 
     @Transactional(readOnly = true)
@@ -179,10 +290,19 @@ public class GoalService {
                 .orElseThrow(() -> new NotFoundException("Aporte não encontrado"));
 
         Goal goal = contribution.getGoal();
-        goal.revertContribution(contribution.getAmount());
+        if (contribution.getType() == GoalContributionType.WITHDRAWAL) {
+            goal.applyContribution(contribution.getAmount());
+        } else {
+            goal.revertContribution(contribution.getAmount());
+        }
 
+        Transaction tx = contribution.getTransaction();
         goalContributionRepository.delete(contribution);
         goalRepository.save(goal);
+
+        if (tx != null) {
+            transactionRepository.delete(tx);
+        }
     }
 
     private Goal findOwnedGoal(UUID goalId, UUID userId) {

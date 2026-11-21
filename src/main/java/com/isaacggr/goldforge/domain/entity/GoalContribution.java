@@ -1,5 +1,6 @@
 package com.isaacggr.goldforge.domain.entity;
 
+import com.isaacggr.goldforge.domain.enums.GoalContributionType;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -39,10 +40,29 @@ public class GoalContribution {
     @Column(length = 255)
     private String note;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private GoalContributionType type = GoalContributionType.CONTRIBUTION;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "transaction_id")
+    private Transaction transaction;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
     public GoalContribution(Goal goal, BigDecimal amount, LocalDate contributionDate, String note) {
+        this(goal, amount, contributionDate, note, GoalContributionType.CONTRIBUTION, null);
+    }
+
+    public GoalContribution(
+            Goal goal,
+            BigDecimal amount,
+            LocalDate contributionDate,
+            String note,
+            GoalContributionType type,
+            Transaction transaction
+    ) {
         BigDecimal normalizedAmount = Transaction.normalizeMonetaryAmount(amount);
         if (normalizedAmount == null || normalizedAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("O valor do aporte deve ser maior que zero");
@@ -51,7 +71,27 @@ public class GoalContribution {
         this.amount = normalizedAmount;
         this.contributionDate = (contributionDate != null) ? contributionDate : LocalDate.now(DEFAULT_ZONE);
         this.note = Goal.normalizeOptionalText(note);
+        this.type = (type != null) ? type : GoalContributionType.CONTRIBUTION;
+        this.transaction = transaction;
         this.createdAt = LocalDateTime.now();
+    }
+
+    public void attachTransaction(Transaction transaction) {
+        this.transaction = transaction;
+    }
+
+    public void update(BigDecimal amount, LocalDate contributionDate, String note) {
+        BigDecimal normalizedAmount = Transaction.normalizeMonetaryAmount(amount);
+        if (normalizedAmount == null || normalizedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("O valor do aporte deve ser maior que zero");
+        }
+        this.amount = normalizedAmount;
+        if (contributionDate != null) {
+            this.contributionDate = contributionDate;
+        }
+        if (note != null) {
+            this.note = Goal.normalizeOptionalText(note);
+        }
     }
 
     @PrePersist

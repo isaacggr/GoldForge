@@ -372,6 +372,13 @@ class ContractHygieneIntegrationTest extends AbstractWebIntegrationTest {
             }
             return c;
         });
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> {
+            Transaction tx = inv.getArgument(0);
+            if (tx.getId() == null) {
+                ReflectionTestUtils.setField(tx, "id", UUID.randomUUID());
+            }
+            return tx;
+        });
 
         mockMvc.perform(post("/goals")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwt)
@@ -584,10 +591,14 @@ class ContractHygieneIntegrationTest extends AbstractWebIntegrationTest {
                 .thenReturn(new BigDecimal("1500.00"));
         when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.EXPENSE, start, end))
                 .thenReturn(new BigDecimal("500.00"));
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.SAVINGS, start, end))
+                .thenReturn(BigDecimal.ZERO);
         when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.INCOME, prevStart, prevEnd))
                 .thenReturn(new BigDecimal("1000.00"));
         when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.EXPENSE, prevStart, prevEnd))
                 .thenReturn(new BigDecimal("400.00"));
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.SAVINGS, prevStart, prevEnd))
+                .thenReturn(BigDecimal.ZERO);
         when(transactionRepository.sumAmountByCategory(userId, TransactionType.EXPENSE, start, end))
                 .thenReturn(List.of());
 

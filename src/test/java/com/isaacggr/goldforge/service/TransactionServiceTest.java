@@ -5,6 +5,8 @@ import com.isaacggr.goldforge.domain.entity.User;
 import com.isaacggr.goldforge.domain.enums.TransactionType;
 import com.isaacggr.goldforge.exception.ConflictException;
 import com.isaacggr.goldforge.exception.NotFoundException;
+import com.isaacggr.goldforge.repository.GoalContributionRepository;
+import com.isaacggr.goldforge.repository.GoalRepository;
 import com.isaacggr.goldforge.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,6 +44,12 @@ class TransactionServiceTest {
 
     @Mock
     private BudgetAlertEvaluator budgetAlertEvaluator;
+
+    @Mock
+    private GoalContributionRepository goalContributionRepository;
+
+    @Mock
+    private GoalRepository goalRepository;
 
     @InjectMocks
     private TransactionService transactionService;

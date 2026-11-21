@@ -56,11 +56,15 @@ class DashboardServiceTest {
                 .thenReturn(new BigDecimal("5000.00"));
         when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.EXPENSE, startDate, endDate))
                 .thenReturn(new BigDecimal("2100.50"));
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.SAVINGS, startDate, endDate))
+                .thenReturn(BigDecimal.ZERO);
 
         when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.INCOME, prevStart, prevEnd))
                 .thenReturn(new BigDecimal("4000.00"));
         when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.EXPENSE, prevStart, prevEnd))
                 .thenReturn(new BigDecimal("4100.00"));
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.SAVINGS, prevStart, prevEnd))
+                .thenReturn(BigDecimal.ZERO);
 
         List<CategoryExpenseDTO> categories = List.of(
                 new CategoryExpenseDTO("ALIMENTAÇÃO", new BigDecimal("1500.00")),
@@ -104,6 +108,8 @@ class DashboardServiceTest {
                 .thenReturn(new BigDecimal("3000.00"));
         when(transactionRepository.sumAmountByTypeAndPeriod(eq(userId), eq(TransactionType.EXPENSE), eq(expectedStart), eq(expectedEnd)))
                 .thenReturn(new BigDecimal("1000.00"));
+        when(transactionRepository.sumAmountByTypeAndPeriod(eq(userId), eq(TransactionType.SAVINGS), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(BigDecimal.ZERO);
         when(transactionRepository.sumAmountByCategory(eq(userId), eq(TransactionType.EXPENSE), any(LocalDate.class), any(LocalDate.class)))
                 .thenReturn(List.of());
 
@@ -119,6 +125,41 @@ class DashboardServiceTest {
         assertNotNull(summary.variation());
         assertNull(summary.variation().incomePercentage());
         assertEquals(new BigDecimal("3000.00"), summary.variation().incomeDifference());
+    }
+
+    @Test
+    @DisplayName("Deve deduzir SAVINGS (aportes de metas) do saldo disponível sem inflar despesas de consumo")
+    void getSummary_Success_DeductsSavingsFromBalance() {
+        LocalDate startDate = LocalDate.of(2026, 4, 1);
+        LocalDate endDate = LocalDate.of(2026, 4, 30);
+        LocalDate prevStart = LocalDate.of(2026, 3, 1);
+        LocalDate prevEnd = LocalDate.of(2026, 3, 31);
+
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.INCOME, startDate, endDate))
+                .thenReturn(new BigDecimal("5000.00"));
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.EXPENSE, startDate, endDate))
+                .thenReturn(new BigDecimal("2000.00"));
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.SAVINGS, startDate, endDate))
+                .thenReturn(new BigDecimal("1000.00"));
+
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.INCOME, prevStart, prevEnd))
+                .thenReturn(new BigDecimal("5000.00"));
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.EXPENSE, prevStart, prevEnd))
+                .thenReturn(new BigDecimal("2000.00"));
+        when(transactionRepository.sumAmountByTypeAndPeriod(userId, TransactionType.SAVINGS, prevStart, prevEnd))
+                .thenReturn(BigDecimal.ZERO);
+
+        when(transactionRepository.sumAmountByCategory(userId, TransactionType.EXPENSE, startDate, endDate))
+                .thenReturn(List.of());
+
+        DashboardSummaryDTO summary = dashboardService.getSummary(userId, startDate, endDate);
+
+        assertNotNull(summary);
+        assertEquals(new BigDecimal("5000.00"), summary.totalIncome());
+        assertEquals(new BigDecimal("2000.00"), summary.totalExpense());
+        // Saldo disponível = 5000 - 2000 - 1000 = 2000.00!
+        assertEquals(new BigDecimal("2000.00"), summary.balance());
+        assertEquals(new BigDecimal("3000.00"), summary.previous().balance());
     }
 
     @Test
