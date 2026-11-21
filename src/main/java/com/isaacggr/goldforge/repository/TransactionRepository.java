@@ -34,6 +34,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
     @EntityGraph(attributePaths = {"goal", "installmentGroup"})
     Page<Transaction> findByUserId(UUID userId, Pageable pageable);
 
+    // 🎯 Buscar transações vinculadas a uma meta específica
+    @Query("SELECT t FROM Transaction t WHERE t.goal.id = :goalId")
+    List<Transaction> findByGoalId(@Param("goalId") UUID goalId);
+
     // 📊 Soma total por tipo (INCOME ou EXPENSE) em um intervalo de datas
     @Query("""
         SELECT COALESCE(SUM(t.amount), 0)

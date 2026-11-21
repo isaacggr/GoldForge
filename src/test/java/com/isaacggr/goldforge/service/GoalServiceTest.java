@@ -139,8 +139,10 @@ class GoalServiceTest {
 
         ArgumentCaptor<GoalContribution> contribCaptor = ArgumentCaptor.forClass(GoalContribution.class);
         verify(goalContributionRepository).save(contribCaptor.capture());
-        assertEquals("Aporte inicial", contribCaptor.getValue().getNote());
+        assertEquals("Saldo inicial pré-existente", contribCaptor.getValue().getNote());
         assertEquals(new BigDecimal("1000.00"), contribCaptor.getValue().getAmount());
+        assertNull(contribCaptor.getValue().getTransaction());
+        verify(transactionService, never()).create(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -320,6 +322,8 @@ class GoalServiceTest {
 
         Goal fallbackGoal = new Goal(sampleUser, "Reserva Secundária", null, new BigDecimal("2000.00"), null, false);
         ReflectionTestUtils.setField(fallbackGoal, "id", UUID.randomUUID());
+        when(transactionRepository.findByGoalId(goalId)).thenReturn(List.of());
+        when(goalContributionRepository.findByGoalIdOrderByContributionDateDescCreatedAtDesc(goalId)).thenReturn(List.of());
         when(goalRepository.findFirstByUserIdAndIdNotOrderByCreatedAtDesc(userId, goalId))
                 .thenReturn(Optional.of(fallbackGoal));
 
@@ -328,6 +332,27 @@ class GoalServiceTest {
         verify(goalRepository).delete(sampleGoal);
         assertTrue(fallbackGoal.isPrimary());
         verify(goalRepository).save(fallbackGoal);
+    }
+
+    @Test
+    @DisplayName("Deve excluir transações vinculadas e contribuições ao deletar meta para estornar saldo do mês")
+    void delete_DeletesLinkedTransactionsAndRestoresCheckingBalance() {
+        Transaction savingsTx = new Transaction(sampleUser, new BigDecimal("500.00"), TransactionType.SAVINGS, "METAS", LocalDate.now(), "Aporte: Reserva");
+        ReflectionTestUtils.setField(savingsTx, "id", UUID.randomUUID());
+
+        GoalContribution contribution = new GoalContribution(sampleGoal, new BigDecimal("500.00"), LocalDate.now(), "Aporte", GoalContributionType.CONTRIBUTION, savingsTx);
+        ReflectionTestUtils.setField(contribution, "id", UUID.randomUUID());
+
+        when(goalRepository.findByIdAndUserId(goalId, userId)).thenReturn(Optional.of(sampleGoal));
+        when(transactionRepository.findByGoalId(goalId)).thenReturn(List.of(savingsTx));
+        when(goalContributionRepository.findByGoalIdOrderByContributionDateDescCreatedAtDesc(goalId)).thenReturn(List.of(contribution));
+
+        goalService.delete(goalId, userId);
+
+        assertNull(contribution.getTransaction());
+        verify(goalContributionRepository).deleteAll(List.of(contribution));
+        verify(transactionRepository).deleteAll(List.of(savingsTx));
+        verify(goalRepository).delete(sampleGoal);
     }
 
     @Test

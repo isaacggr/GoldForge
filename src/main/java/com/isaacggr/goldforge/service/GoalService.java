@@ -80,34 +80,18 @@ public class GoalService {
         if (dto.initialAmount() != null && dto.initialAmount().compareTo(BigDecimal.ZERO) > 0) {
             savedGoal.applyContribution(dto.initialAmount());
 
-            LocalDate txDate = LocalDate.now(GoalContribution.DEFAULT_ZONE);
-            Transaction tx = transactionService.create(
-                    user,
-                    dto.initialAmount(),
-                    TransactionType.SAVINGS,
-                    "METAS",
-                    txDate,
-                    "Aporte inicial: " + savedGoal.getTitle(),
-                    null,
-                    null,
-                    null,
-                    savedGoal,
-                    null
-            );
-
+            LocalDate initialDate = LocalDate.now(GoalContribution.DEFAULT_ZONE);
             GoalContribution contribution = new GoalContribution(
                     savedGoal,
                     dto.initialAmount(),
-                    txDate,
-                    "Aporte inicial",
+                    initialDate,
+                    "Saldo inicial pré-existente",
                     GoalContributionType.CONTRIBUTION,
-                    tx
+                    null
             );
-            GoalContribution savedContribution = goalContributionRepository.save(contribution);
-            tx.setGoalContributionId(savedContribution.getId());
+            goalContributionRepository.save(contribution);
 
             savedGoal = goalRepository.save(savedGoal);
-            gamificationService.onGoalContribution(savedGoal.getUser(), savedGoal.getCurrentAmount(), savedGoal.isCompleted());
         }
 
         if (savedGoal.isCompleted()) {
@@ -167,6 +151,25 @@ public class GoalService {
     public void delete(UUID goalId, UUID userId) {
         Goal goal = findOwnedGoal(goalId, userId);
         boolean wasPrimary = goal.isPrimary();
+
+        // 1. Busca todas as movimentações financeiras geradas por esta meta
+        List<Transaction> linkedTransactions = transactionRepository.findByGoalId(goalId);
+
+        // 2. Desvincula e remove as contribuições registradas na meta
+        List<GoalContribution> contributions = goalContributionRepository.findByGoalIdOrderByContributionDateDescCreatedAtDesc(goalId);
+        for (GoalContribution contribution : contributions) {
+            contribution.attachTransaction(null);
+        }
+        goalContributionRepository.deleteAll(contributions);
+        goalContributionRepository.flush();
+
+        // 3. Exclui definitivamente as transações vinculadas (revertendo SAVINGS e restaurando o saldo do mês)
+        if (!linkedTransactions.isEmpty()) {
+            transactionRepository.deleteAll(linkedTransactions);
+            transactionRepository.flush();
+        }
+
+        // 4. Remove a meta
         goalRepository.delete(goal);
 
         if (wasPrimary) {
