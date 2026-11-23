@@ -3,6 +3,7 @@ package com.isaacggr.goldforge.controller;
 import com.isaacggr.goldforge.domain.entity.User;
 import com.isaacggr.goldforge.dto.notification.NotificationPreferenceResponseDTO;
 import com.isaacggr.goldforge.dto.notification.NotificationPreferenceUpdateDTO;
+import com.isaacggr.goldforge.dto.user.AvatarUpdateDTO;
 import com.isaacggr.goldforge.dto.user.UserCreateDTO;
 import com.isaacggr.goldforge.dto.user.UserPasswordUpdateDTO;
 import com.isaacggr.goldforge.dto.user.UserProfileUpdateDTO;
@@ -78,6 +79,19 @@ public class UserController {
             @AuthenticationPrincipal User user
     ) {
         return ResponseEntity.ok(service.updateProfile(user.getId(), dto));
+    }
+
+    // ✅ Atualizar avatar RPG do usuário autenticado (Zero IDOR)
+    @PatchMapping("/me/avatar")
+    @Operation(summary = "Atualizar avatar RPG", description = "Altera o avatar RPG ativo do jogador. Zero IDOR.")
+    @ApiResponse(responseCode = "200", description = "Avatar atualizado com sucesso")
+    @ApiResponse(responseCode = "404", description = "Usuário não encontrado",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    public ResponseEntity<UserResponseDTO> updateAvatar(
+            @RequestBody @Valid AvatarUpdateDTO dto,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(service.updateAvatar(user.getId(), dto.avatarId()));
     }
 
     // ✅ Alterar senha do usuário autenticado (exige senha atual, sem código por e-mail)

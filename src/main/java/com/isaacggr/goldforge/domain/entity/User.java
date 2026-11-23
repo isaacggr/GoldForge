@@ -30,6 +30,9 @@ public class User {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
+    @Column(name = "avatar_id", nullable = false, length = 50)
+    private String avatarId = "avatar-01";
+
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
 
@@ -50,6 +53,7 @@ public class User {
         this.name = name;
         this.email = email;
         this.passwordHash = passwordHash;
+        this.avatarId = "avatar-01";
         this.emailVerified = false;
         this.deleted = false;
         this.createdAt = LocalDateTime.now();
@@ -103,6 +107,12 @@ public class User {
 
     public void verifyEmail() {
         this.emailVerified = true;
+    }
+
+    public void changeAvatar(String avatarId) {
+        if (avatarId != null && !avatarId.isBlank()) {
+            this.avatarId = avatarId.trim();
+        }
     }
 
     public void updatePassword(String newPasswordHash) {

@@ -7,13 +7,15 @@ import com.isaacggr.goldforge.domain.entity.User;
 public record UserResponseDTO(
         UUID id,
         String name,
-        String email
+        String email,
+        String avatarId
 ) {
     public static UserResponseDTO fromEntity(User user) {
         return new UserResponseDTO(
                 user.getId(),
                 user.getName(),
-                user.getEmail()
+                user.getEmail(),
+                user.getAvatarId()
         );
     }
 }
