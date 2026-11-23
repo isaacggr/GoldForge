@@ -173,6 +173,20 @@ class UserServiceTest {
     }
 
     @Test
+    @DisplayName("Deve atualizar o avatar do usuário com sucesso")
+    void updateAvatar_Success() {
+        UUID id = UUID.randomUUID();
+        when(userRepository.findByIdAndDeletedFalse(id)).thenReturn(Optional.of(sampleUser));
+        when(userRepository.save(sampleUser)).thenReturn(sampleUser);
+
+        UserResponseDTO response = userService.updateAvatar(id, "avatar-05");
+
+        assertEquals("avatar-05", response.avatarId());
+        assertEquals("avatar-05", sampleUser.getAvatarId());
+        verify(userRepository).save(sampleUser);
+    }
+
+    @Test
     @DisplayName("Deve lançar BusinessException ao atualizar nome com menos de 2 caracteres úteis")
     void updateProfile_ThrowsBusinessException_WhenTrimmedNameTooShort() {
         UUID id = UUID.randomUUID();

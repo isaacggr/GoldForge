@@ -124,8 +124,21 @@ public class UserService {
         if (normalizedName.length() < 2 || normalizedName.length() > 50) {
             throw new BusinessException("O nome deve ter entre 2 e 50 caracteres");
         }
-
         user.changeName(normalizedName);
+
+        if (dto.avatarId() != null && !dto.avatarId().isBlank()) {
+            user.changeAvatar(dto.avatarId());
+        }
+
+        return UserResponseDTO.fromEntity(userRepository.save(user));
+    }
+
+    public UserResponseDTO updateAvatar(UUID id, String avatarId) {
+        User user = findActiveUserById(id);
+        if (avatarId == null || avatarId.isBlank()) {
+            throw new BusinessException("O identificador do avatar é obrigatório");
+        }
+        user.changeAvatar(avatarId);
         return UserResponseDTO.fromEntity(userRepository.save(user));
     }
 
