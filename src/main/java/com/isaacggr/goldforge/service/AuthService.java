@@ -3,6 +3,7 @@ package com.isaacggr.goldforge.service;
 import com.isaacggr.goldforge.domain.entity.User;
 import com.isaacggr.goldforge.domain.entity.VerificationToken;
 import com.isaacggr.goldforge.domain.enums.TokenType;
+import com.isaacggr.goldforge.dto.auth.AuthenticatedSession;
 import com.isaacggr.goldforge.dto.auth.ForgotPasswordRequestDTO;
 import com.isaacggr.goldforge.dto.auth.LoginRequestDTO;
 import com.isaacggr.goldforge.dto.auth.LoginResponseDTO;
@@ -48,7 +49,7 @@ public class AuthService {
     }
 
     @Transactional
-    public LoginResponseDTO login(LoginRequestDTO dto) {
+    public AuthenticatedSession login(LoginRequestDTO dto) {
         User user = userRepository.findByEmail(dto.email())
                 .orElseThrow(() -> new UnauthorizedException("Credenciais inválidas"));
 
@@ -81,9 +82,10 @@ public class AuthService {
         }
 
         String token = tokenService.generateToken(user);
-        return reactivated
-                ? LoginResponseDTO.reactivated(token, expirationMillis)
-                : LoginResponseDTO.of(token, expirationMillis);
+        LoginResponseDTO response = reactivated
+                ? LoginResponseDTO.reactivated(expirationMillis)
+                : LoginResponseDTO.of(expirationMillis);
+        return new AuthenticatedSession(token, response);
     }
 
     // ==========================================

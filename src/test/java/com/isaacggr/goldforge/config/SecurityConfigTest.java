@@ -3,6 +3,7 @@ package com.isaacggr.goldforge.config;
 import com.isaacggr.goldforge.domain.entity.Transaction;
 import com.isaacggr.goldforge.domain.entity.User;
 import com.isaacggr.goldforge.support.AbstractWebIntegrationTest;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
@@ -244,5 +245,33 @@ class SecurityConfigTest extends AbstractWebIntegrationTest {
                         .content("{\"email\":\"naoexiste@example.com\"}"))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().string("X-RateLimit-Limit", "5"));
+    }
+
+    @Test
+    @DisplayName("Deve autenticar usuário via Cookie HTTP-Only e limpar cookie no POST /auth/logout")
+    @SuppressWarnings("unchecked")
+    void shouldAuthenticateWithHttpOnlyCookieAndClearOnLogout() throws Exception {
+        User user = createVerifiedUser("Isaac Cookie", "cookie@example.com", "Senha123!");
+        String jwt = tokenService.generateToken(user);
+
+        when(userRepository.findByIdAndDeletedFalse(user.getId())).thenReturn(Optional.of(user));
+        when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(get("/transactions")
+                        .cookie(new Cookie("goldforge_access_token", jwt)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray());
+
+        mockMvc.perform(get("/transactions")
+                        .cookie(new Cookie("goldforge_access_token", "jwt.invalido")))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/auth/logout"))
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().exists("goldforge_access_token"))
+                .andExpect(cookie().value("goldforge_access_token", ""))
+                .andExpect(cookie().maxAge("goldforge_access_token", 0))
+                .andExpect(cookie().httpOnly("goldforge_access_token", true));
     }
 }

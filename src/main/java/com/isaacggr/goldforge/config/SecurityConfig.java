@@ -27,7 +27,7 @@ import java.util.Arrays;
 import java.util.List;
 
 @Configuration
-@EnableConfigurationProperties(RateLimitProperties.class)
+@EnableConfigurationProperties({RateLimitProperties.class, AuthCookieProperties.class})
 public class SecurityConfig {
 
     private final SecurityFilter securityFilter;

@@ -3,9 +3,9 @@ package com.isaacggr.goldforge.service;
 import com.isaacggr.goldforge.domain.entity.User;
 import com.isaacggr.goldforge.domain.entity.VerificationToken;
 import com.isaacggr.goldforge.domain.enums.TokenType;
+import com.isaacggr.goldforge.dto.auth.AuthenticatedSession;
 import com.isaacggr.goldforge.dto.auth.ForgotPasswordRequestDTO;
 import com.isaacggr.goldforge.dto.auth.LoginRequestDTO;
-import com.isaacggr.goldforge.dto.auth.LoginResponseDTO;
 import com.isaacggr.goldforge.dto.auth.ResetPasswordRequestDTO;
 import com.isaacggr.goldforge.dto.auth.VerifyEmailRequestDTO;
 import com.isaacggr.goldforge.exception.BusinessException;
@@ -66,7 +66,7 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("Deve realizar login com sucesso e retornar token JWT quando o e-mail estiver verificado")
+    @DisplayName("Deve realizar login com sucesso e retornar sessão com token JWT e metadados Cookie")
     void login_Success() {
         LoginRequestDTO dto = new LoginRequestDTO("isaac@example.com", "plainPassword123");
 
@@ -74,13 +74,13 @@ class AuthServiceTest {
         when(passwordEncoder.matches(dto.password(), sampleUser.getPasswordHash())).thenReturn(true);
         when(tokenService.generateToken(sampleUser)).thenReturn("fake.jwt.token");
 
-        LoginResponseDTO response = authService.login(dto);
+        AuthenticatedSession session = authService.login(dto);
 
-        assertNotNull(response);
-        assertEquals("fake.jwt.token", response.token());
-        assertEquals("Bearer", response.type());
-        assertEquals(expiration, response.expiresIn());
-        assertNull(response.reactivated());
+        assertNotNull(session);
+        assertEquals("fake.jwt.token", session.token());
+        assertEquals("Cookie", session.response().type());
+        assertEquals(expiration, session.response().expiresIn());
+        assertNull(session.response().reactivated());
         verify(tokenService).generateToken(sampleUser);
     }
 
@@ -96,10 +96,10 @@ class AuthServiceTest {
         when(passwordEncoder.encode(dto.password())).thenReturn(newArgon2Hash);
         when(tokenService.generateToken(sampleUser)).thenReturn("fake.jwt.token");
 
-        LoginResponseDTO response = authService.login(dto);
+        AuthenticatedSession session = authService.login(dto);
 
-        assertNotNull(response);
-        assertEquals("fake.jwt.token", response.token());
+        assertNotNull(session);
+        assertEquals("fake.jwt.token", session.token());
         assertEquals(newArgon2Hash, sampleUser.getPasswordHash(), "A entidade User deve ter sua senha atualizada para o novo hash");
         verify(passwordEncoder).encode("plainPassword123");
         verify(userRepository).save(sampleUser);
@@ -115,9 +115,9 @@ class AuthServiceTest {
         when(passwordEncoder.upgradeEncoding(sampleUser.getPasswordHash())).thenReturn(false);
         when(tokenService.generateToken(sampleUser)).thenReturn("fake.jwt.token");
 
-        LoginResponseDTO response = authService.login(dto);
+        AuthenticatedSession session = authService.login(dto);
 
-        assertNotNull(response);
+        assertNotNull(session);
         verify(passwordEncoder, never()).encode(any());
         verify(userRepository, never()).save(any());
     }
@@ -187,12 +187,12 @@ class AuthServiceTest {
         when(passwordEncoder.matches(dto.password(), sampleUser.getPasswordHash())).thenReturn(true);
         when(tokenService.generateToken(sampleUser)).thenReturn("reactivated.jwt.token");
 
-        LoginResponseDTO response = authService.login(dto);
+        AuthenticatedSession session = authService.login(dto);
 
         assertFalse(sampleUser.isDeleted());
         assertNull(sampleUser.getDeletedAt());
-        assertTrue(Boolean.TRUE.equals(response.reactivated()));
-        assertEquals("reactivated.jwt.token", response.token());
+        assertTrue(Boolean.TRUE.equals(session.response().reactivated()));
+        assertEquals("reactivated.jwt.token", session.token());
         verify(userRepository).save(sampleUser);
         verify(tokenService).generateToken(sampleUser);
     }
