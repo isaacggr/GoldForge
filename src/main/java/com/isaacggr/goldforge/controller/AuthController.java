@@ -2,6 +2,7 @@ package com.isaacggr.goldforge.controller;
 
 import com.isaacggr.goldforge.dto.auth.AuthenticatedSession;
 import com.isaacggr.goldforge.dto.auth.ForgotPasswordRequestDTO;
+import com.isaacggr.goldforge.dto.auth.GoogleLoginRequestDTO;
 import com.isaacggr.goldforge.dto.auth.LoginRequestDTO;
 import com.isaacggr.goldforge.dto.auth.LoginResponseDTO;
 import com.isaacggr.goldforge.dto.auth.ResetPasswordRequestDTO;
@@ -48,6 +49,25 @@ public class AuthController {
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
     public ResponseEntity<LoginResponseDTO> login(@RequestBody @Valid LoginRequestDTO dto) {
         AuthenticatedSession session = authService.login(dto);
+        ResponseCookie cookie = authCookieService.createAuthCookie(
+                session.token(),
+                session.response().expiresIn()
+        );
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(session.response());
+    }
+
+    @PostMapping("/google")
+    @Operation(
+            summary = "Realizar login ou cadastro com Google",
+            description = "Autentica ou cadastra o usuário através do ID Token emitido pelo Google Identity Services, emitindo a sessão JWT em cookie HTTP-Only Same-Site."
+    )
+    @ApiResponse(responseCode = "200", description = "Login com Google realizado com sucesso")
+    @ApiResponse(responseCode = "401", description = "Token do Google inválido ou expirado",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    public ResponseEntity<LoginResponseDTO> loginWithGoogle(@RequestBody @Valid GoogleLoginRequestDTO dto) {
+        AuthenticatedSession session = authService.loginWithGoogle(dto);
         ResponseCookie cookie = authCookieService.createAuthCookie(
                 session.token(),
                 session.response().expiresIn()

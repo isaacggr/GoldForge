@@ -5,12 +5,14 @@ import com.isaacggr.goldforge.domain.entity.VerificationToken;
 import com.isaacggr.goldforge.domain.enums.TokenType;
 import com.isaacggr.goldforge.dto.auth.AuthenticatedSession;
 import com.isaacggr.goldforge.dto.auth.ForgotPasswordRequestDTO;
+import com.isaacggr.goldforge.dto.auth.GoogleLoginRequestDTO;
 import com.isaacggr.goldforge.dto.auth.LoginRequestDTO;
 import com.isaacggr.goldforge.dto.auth.ResetPasswordRequestDTO;
 import com.isaacggr.goldforge.dto.auth.VerifyEmailRequestDTO;
 import com.isaacggr.goldforge.exception.BusinessException;
 import com.isaacggr.goldforge.exception.ForbiddenException;
 import com.isaacggr.goldforge.exception.UnauthorizedException;
+import com.isaacggr.goldforge.repository.UserNotificationPreferenceRepository;
 import com.isaacggr.goldforge.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +37,9 @@ class AuthServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private UserNotificationPreferenceRepository preferenceRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -46,6 +51,9 @@ class AuthServiceTest {
     @Mock
     private EmailService emailService;
 
+    @Mock
+    private GoogleTokenVerifierService googleTokenVerifierService;
+
     private AuthService authService;
     private final long expiration = 86400000;
     private User sampleUser;
@@ -54,10 +62,12 @@ class AuthServiceTest {
     void setUp() {
         authService = new AuthService(
                 userRepository,
+                preferenceRepository,
                 passwordEncoder,
                 tokenService,
                 verificationTokenService,
                 emailService,
+                googleTokenVerifierService,
                 expiration
         );
         sampleUser = new User("Isaac Gregorio", "isaac@example.com", "encodedPassword123");
@@ -280,6 +290,72 @@ class AuthServiceTest {
 
         assertEquals("Código incorreto. Tentativas restantes: 4", exception.getMessage());
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Deve autenticar com sucesso conta existente via Google Login e ativar e-mail pendente")
+    void loginWithGoogle_ExistingUser_Success() {
+        GoogleLoginRequestDTO dto = new GoogleLoginRequestDTO("valid.google.id.token");
+        GoogleTokenVerifierService.GoogleUserData googleData =
+                new GoogleTokenVerifierService.GoogleUserData("isaac@example.com", "Isaac Google", true);
+
+        when(googleTokenVerifierService.verify("valid.google.id.token")).thenReturn(googleData);
+        when(userRepository.findByEmail("isaac@example.com")).thenReturn(Optional.of(sampleUser));
+        when(tokenService.generateToken(sampleUser)).thenReturn("jwt.google.existing");
+
+        AuthenticatedSession session = authService.loginWithGoogle(dto);
+
+        assertNotNull(session);
+        assertEquals("jwt.google.existing", session.token());
+        assertEquals("Cookie", session.response().type());
+        assertTrue(sampleUser.isEmailVerified());
+        verify(userRepository).save(sampleUser);
+    }
+
+    @Test
+    @DisplayName("Deve cadastrar automaticamente novo usuário com e-mail verificado via Google Login")
+    void loginWithGoogle_NewUser_CreatesAndAuthenticates() {
+        GoogleLoginRequestDTO dto = new GoogleLoginRequestDTO("valid.google.id.token.new");
+        GoogleTokenVerifierService.GoogleUserData googleData =
+                new GoogleTokenVerifierService.GoogleUserData("novo.google@example.com", "Novo Aventureiro", true);
+
+        when(googleTokenVerifierService.verify("valid.google.id.token.new")).thenReturn(googleData);
+        when(userRepository.findByEmail("novo.google@example.com")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("$argon2id$randomHash");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User u = invocation.getArgument(0);
+            ReflectionTestUtils.setField(u, "id", UUID.randomUUID());
+            return u;
+        });
+        when(tokenService.generateToken(any(User.class))).thenReturn("jwt.google.new");
+
+        AuthenticatedSession session = authService.loginWithGoogle(dto);
+
+        assertNotNull(session);
+        assertEquals("jwt.google.new", session.token());
+        assertEquals("Cookie", session.response().type());
+        verify(preferenceRepository).save(any());
+        verify(userRepository).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("Deve reativar conta excluída dentro de 30 dias via Google Login")
+    void loginWithGoogle_ReactivatesDeletedUser() {
+        GoogleLoginRequestDTO dto = new GoogleLoginRequestDTO("valid.google.id.token.reactivate");
+        GoogleTokenVerifierService.GoogleUserData googleData =
+                new GoogleTokenVerifierService.GoogleUserData("isaac@example.com", "Isaac Gregorio", true);
+
+        sampleUser.markAsDeleted();
+        when(googleTokenVerifierService.verify(dto.idToken())).thenReturn(googleData);
+        when(userRepository.findByEmail("isaac@example.com")).thenReturn(Optional.of(sampleUser));
+        when(tokenService.generateToken(sampleUser)).thenReturn("jwt.google.reactivated");
+
+        AuthenticatedSession session = authService.loginWithGoogle(dto);
+
+        assertNotNull(session);
+        assertFalse(sampleUser.isDeleted());
+        assertTrue(Boolean.TRUE.equals(session.response().reactivated()));
+        verify(userRepository).save(sampleUser);
     }
 }
 

@@ -274,4 +274,29 @@ class SecurityConfigTest extends AbstractWebIntegrationTest {
                 .andExpect(cookie().maxAge("goldforge_access_token", 0))
                 .andExpect(cookie().httpOnly("goldforge_access_token", true));
     }
+
+    @Test
+    @DisplayName("POST /auth/google deve autenticar com sucesso e emitir cookie HTTP-Only")
+    void shouldLoginWithGoogleAndEmitHttpOnlyCookie() throws Exception {
+        var googleData = new com.isaacggr.goldforge.service.GoogleTokenVerifierService.GoogleUserData(
+                "google.user@example.com", "Google User", true
+        );
+        when(googleTokenVerifierService.verify("valid.google.jwt")).thenReturn(googleData);
+        when(userRepository.findByEmail("google.user@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User u = invocation.getArgument(0);
+            ReflectionTestUtils.setField(u, "id", UUID.randomUUID());
+            return u;
+        });
+
+        mockMvc.perform(post("/auth/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idToken\":\"valid.google.jwt\"}"))
+                .andExpect(status().isOk())
+                .andExpect(cookie().exists("goldforge_access_token"))
+                .andExpect(cookie().httpOnly("goldforge_access_token", true))
+                .andExpect(jsonPath("$.type").value("Cookie"))
+                .andExpect(jsonPath("$.expiresIn").exists())
+                .andExpect(jsonPath("$.token").doesNotExist());
+    }
 }

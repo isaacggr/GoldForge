@@ -90,6 +90,9 @@ public abstract class AbstractWebIntegrationTest {
     @MockitoBean
     protected JavaMailSender mailSender;
 
+    @MockitoBean
+    protected com.isaacggr.goldforge.service.GoogleTokenVerifierService googleTokenVerifierService;
+
     protected MockMvc mockMvc;
 
     @BeforeEach
