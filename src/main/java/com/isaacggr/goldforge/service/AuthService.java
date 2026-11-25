@@ -11,6 +11,7 @@ import com.isaacggr.goldforge.dto.auth.VerifyEmailRequestDTO;
 import com.isaacggr.goldforge.exception.ForbiddenException;
 import com.isaacggr.goldforge.exception.UnauthorizedException;
 import com.isaacggr.goldforge.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 public class AuthService {
@@ -61,6 +63,14 @@ public class AuthService {
         // 🔒 Bloqueio estrito de contas com e-mail pendente de ativação (HTTP 403 Forbidden)
         if (!user.isEmailVerified()) {
             throw new ForbiddenException("Por favor, confirme seu e-mail antes de efetuar login.");
+        }
+
+        // 🔒 Lazy Rehashing: Se a senha foi autenticada via BCrypt ou parâmetros legados,
+        // promove de forma transparente e atômica para Argon2id no banco de dados.
+        if (passwordEncoder.upgradeEncoding(user.getPasswordHash())) {
+            user.updatePassword(passwordEncoder.encode(dto.password()));
+            userRepository.save(user);
+            log.info("🔒 [LAZY REHASH] Senha do usuário [{}] migrada com sucesso de BCrypt para Argon2id.", user.getId());
         }
 
         boolean reactivated = false;

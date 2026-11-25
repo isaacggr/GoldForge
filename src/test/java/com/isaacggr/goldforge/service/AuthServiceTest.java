@@ -85,6 +85,44 @@ class AuthServiceTest {
     }
 
     @Test
+    @DisplayName("Deve executar Lazy Rehashing e atualizar a senha para Argon2id quando upgradeEncoding for true")
+    void login_Success_ShouldExecuteLazyRehashing_WhenUpgradeEncodingIsTrue() {
+        LoginRequestDTO dto = new LoginRequestDTO("isaac@example.com", "plainPassword123");
+        String newArgon2Hash = "$argon2id$v=19$m=16384,t=2,p=1$fakeSalt$fakeArgon2Hash";
+
+        when(userRepository.findByEmail(dto.email())).thenReturn(Optional.of(sampleUser));
+        when(passwordEncoder.matches(dto.password(), sampleUser.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.upgradeEncoding(sampleUser.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.encode(dto.password())).thenReturn(newArgon2Hash);
+        when(tokenService.generateToken(sampleUser)).thenReturn("fake.jwt.token");
+
+        LoginResponseDTO response = authService.login(dto);
+
+        assertNotNull(response);
+        assertEquals("fake.jwt.token", response.token());
+        assertEquals(newArgon2Hash, sampleUser.getPasswordHash(), "A entidade User deve ter sua senha atualizada para o novo hash");
+        verify(passwordEncoder).encode("plainPassword123");
+        verify(userRepository).save(sampleUser);
+    }
+
+    @Test
+    @DisplayName("Não deve persistir atualização de senha quando upgradeEncoding for false")
+    void login_Success_ShouldNotRehash_WhenUpgradeEncodingIsFalse() {
+        LoginRequestDTO dto = new LoginRequestDTO("isaac@example.com", "plainPassword123");
+
+        when(userRepository.findByEmail(dto.email())).thenReturn(Optional.of(sampleUser));
+        when(passwordEncoder.matches(dto.password(), sampleUser.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.upgradeEncoding(sampleUser.getPasswordHash())).thenReturn(false);
+        when(tokenService.generateToken(sampleUser)).thenReturn("fake.jwt.token");
+
+        LoginResponseDTO response = authService.login(dto);
+
+        assertNotNull(response);
+        verify(passwordEncoder, never()).encode(any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("Deve lançar ForbiddenException (403) quando o e-mail não tiver sido verificado")
     void login_ThrowsForbidden_WhenEmailNotVerified() {
         User unverifiedUser = new User("Pendente", "pendente@example.com", "encodedPassword123");
