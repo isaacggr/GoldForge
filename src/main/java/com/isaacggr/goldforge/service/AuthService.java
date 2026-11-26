@@ -104,7 +104,11 @@ public class AuthService {
     // ==========================================
     @Transactional
     public AuthenticatedSession loginWithGoogle(GoogleLoginRequestDTO dto) {
-        GoogleTokenVerifierService.GoogleUserData userData = googleTokenVerifierService.verify(dto.idToken());
+        String googleToken = dto.token();
+        if (googleToken == null || googleToken.isBlank()) {
+            throw new UnauthorizedException("Token do Google não fornecido");
+        }
+        GoogleTokenVerifierService.GoogleUserData userData = googleTokenVerifierService.verify(googleToken);
         String email = userData.email();
 
         Optional<User> optionalUser = userRepository.findByEmail(email);
