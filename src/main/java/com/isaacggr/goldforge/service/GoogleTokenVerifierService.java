@@ -7,6 +7,7 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.isaacggr.goldforge.config.GoogleAuthProperties;
 import com.isaacggr.goldforge.exception.UnauthorizedException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -25,6 +26,7 @@ public class GoogleTokenVerifierService {
 
     private final GoogleIdTokenVerifier verifier;
 
+    @Autowired
     public GoogleTokenVerifierService(GoogleAuthProperties properties) {
         try {
             this.verifier = new GoogleIdTokenVerifier.Builder(
