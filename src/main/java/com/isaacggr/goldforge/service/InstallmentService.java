@@ -108,6 +108,7 @@ public class InstallmentService {
 
         List<Bill> generatedBills = new ArrayList<>();
         List<Transaction> pastTransactions = new ArrayList<>();
+        String userNotes = (dto.notes() != null && !dto.notes().isBlank()) ? dto.notes().trim() : null;
 
         // 1. Gera e liquida no extrato de transações as parcelas anteriores à atual (já pagas no passado)
         for (int i = 1; i < currentInstallment; i++) {
@@ -118,7 +119,9 @@ public class InstallmentService {
             // Recua mês a mês com base na data da parcela atual
             LocalDate pastDate = dto.startDate().minusMonths(currentInstallment - i);
             String title = String.format("%s (%d/%d)", dto.description().trim(), i, totalInstallments);
-            String desc = String.format("Parcela %d de %d da compra parcelada (paga em meses anteriores)", i, totalInstallments);
+            String desc = (userNotes != null)
+                    ? userNotes
+                    : String.format("Parcela %d de %d da compra parcelada (paga em meses anteriores)", i, totalInstallments);
 
             // Registra a transação de despesa no mês correspondente
             Transaction tx = new Transaction(
@@ -162,7 +165,9 @@ public class InstallmentService {
             // A data avança mês a mês a partir da data de vencimento da parcela atual
             LocalDate installmentDate = dto.startDate().plusMonths(i - currentInstallment);
             String installmentTitle = String.format("%s (%d/%d)", dto.description().trim(), i, totalInstallments);
-            String installmentDesc = String.format("Parcela %d de %d da compra parcelada", i, totalInstallments);
+            String installmentDesc = (userNotes != null)
+                    ? userNotes
+                    : String.format("Parcela %d de %d da compra parcelada", i, totalInstallments);
 
             Bill installmentBill = new Bill(
                     user,

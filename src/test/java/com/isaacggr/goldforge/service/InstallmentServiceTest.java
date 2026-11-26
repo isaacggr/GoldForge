@@ -130,6 +130,34 @@ class InstallmentServiceTest {
     }
 
     @Test
+    @DisplayName("Deve aplicar as observações/descrição customizada do usuário nas parcelas geradas")
+    void create_Success_WithCustomNotes_AppliesUserNotesToBills() {
+        when(installmentGroupRepository.save(any(InstallmentGroup.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(billRepository.save(any(Bill.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        InstallmentPurchaseCreateDTO dto = new InstallmentPurchaseCreateDTO(
+                new BigDecimal("300.00"),
+                null,
+                3,
+                1,
+                "ELETRONICOS",
+                startDate,
+                "Fone Bluetooth",
+                "Comprado na Black Friday com cupom"
+        );
+
+        installmentService.create(sampleUser, dto);
+
+        ArgumentCaptor<Bill> captor = ArgumentCaptor.forClass(Bill.class);
+        verify(billRepository, times(3)).save(captor.capture());
+        List<Bill> savedBills = captor.getAllValues();
+
+        for (Bill bill : savedBills) {
+            assertEquals("Comprado na Black Friday com cupom", bill.getDescription());
+        }
+    }
+
+    @Test
     @DisplayName("Deve gerar transações e contas pagas para parcelas anteriores e pendentes a partir da atual")
     void create_Success_WithCurrentInstallment_PastInstallmentsGoToTransactionsAndBillsMarkedPaid() {
         when(installmentGroupRepository.save(any(InstallmentGroup.class))).thenAnswer(inv -> {

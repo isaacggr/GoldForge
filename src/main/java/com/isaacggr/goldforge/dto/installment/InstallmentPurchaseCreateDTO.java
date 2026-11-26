@@ -46,6 +46,21 @@ public record InstallmentPurchaseCreateDTO(
         @Schema(description = "Descrição detalhada da compra parcelada", example = "Notebook Dell Inspiron")
         @NotBlank(message = "A descrição da compra parcelada é obrigatória")
         @Size(max = 255, message = "A descrição deve ter no máximo 255 caracteres")
-        String description
+        String description,
+
+        @Schema(description = "Observações ou detalhes adicionais sobre as parcelas da compra (opcional)", example = "Comprado na Black Friday com desconto")
+        @Size(max = 255, message = "A observação deve ter no máximo 255 caracteres")
+        String notes
 ) {
+    public InstallmentPurchaseCreateDTO(
+            BigDecimal totalAmount,
+            BigDecimal installmentAmount,
+            Integer totalInstallments,
+            Integer currentInstallment,
+            String category,
+            LocalDate startDate,
+            String description
+    ) {
+        this(totalAmount, installmentAmount, totalInstallments, currentInstallment, category, startDate, description, null);
+    }
 }
