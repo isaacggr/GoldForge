@@ -63,6 +63,13 @@ springdoc:
 
 app:
   url: ${APP_URL:http://localhost:8080}
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:895347964168-sfcf2qha4g44nee45nqb3qf36a2bd2li.apps.googleusercontent.com}
+  cookie:
+    name: ${COOKIE_NAME:goldforge_access_token}
+    domain: ${COOKIE_DOMAIN:}
+    secure: ${COOKIE_SECURE:false}
+    same-site: ${COOKIE_SAME_SITE:Lax}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:4173}
   rate-limit:

@@ -86,6 +86,20 @@
 			<scope>provided</scope>
 		</dependency>
 
+		<!-- Bouncy Castle: Provedor criptográfico obrigatório para Argon2id no Spring Security -->
+		<dependency>
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcprov-jdk18on</artifactId>
+			<version>1.80</version>
+		</dependency>
+
+		<!-- Google API Client: Validação criptográfica de ID Tokens OAuth 2.0 / OIDC -->
+		<dependency>
+			<groupId>com.google.api-client</groupId>
+			<artifactId>google-api-client</artifactId>
+			<version>2.7.2</version>
+		</dependency>
+
 		<!-- Flyway para migrações e versionamento de banco de dados -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

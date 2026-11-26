@@ -61,8 +61,8 @@ public class OpenApiConfig {
                         .description("### API RESTful de Gestão Financeira com Gamificação RPG\n\n"
                                 + "Para testar rotas protegidas:\n"
                                 + "1. Crie sua conta em `POST /users` (ou use um usuário existente);\n"
-                                + "2. Autentique-se em `POST /auth/login` e copie o `token`;\n"
-                                + "3. Clique no botão **Authorize 🔓** no topo e informe o token JWT.")
+                                + "2. Autentique-se em `POST /auth/login` (o cookie HTTP-Only será salvo automaticamente pelo navegador);\n"
+                                + "3. Alternativamente, para clientes Bearer externos, clique em **Authorize 🔓** no topo e informe o token JWT.")
                         .version("v1.0.0")
                         .contact(new Contact()
                                 .name("Isaac Gregório")

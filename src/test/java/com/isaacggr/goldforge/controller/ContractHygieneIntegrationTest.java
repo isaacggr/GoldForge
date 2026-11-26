@@ -217,7 +217,7 @@ class ContractHygieneIntegrationTest extends AbstractWebIntegrationTest {
     }
 
     @Test
-    @DisplayName("POST /auth/login deve omitir reactivated em login normal e reativar conta excluída dentro de 30 dias")
+    @DisplayName("POST /auth/login deve emitir cookie HTTP-Only sem expor token no JSON e reativar conta excluída dentro de 30 dias")
     void login_HandlesReactivationFlagCorrectly() throws Exception {
         when(userRepository.findByEmail("isaac@example.com")).thenReturn(Optional.of(authenticatedUser));
 
@@ -230,7 +230,11 @@ class ContractHygieneIntegrationTest extends AbstractWebIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").exists())
+                .andExpect(cookie().exists("goldforge_access_token"))
+                .andExpect(cookie().httpOnly("goldforge_access_token", true))
+                .andExpect(jsonPath("$.token").doesNotExist())
+                .andExpect(jsonPath("$.type").value("Cookie"))
+                .andExpect(jsonPath("$.expiresIn").exists())
                 .andExpect(jsonPath("$.reactivated").doesNotExist());
 
         authenticatedUser.markAsDeleted();
@@ -245,7 +249,9 @@ class ContractHygieneIntegrationTest extends AbstractWebIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").exists())
+                .andExpect(cookie().exists("goldforge_access_token"))
+                .andExpect(cookie().httpOnly("goldforge_access_token", true))
+                .andExpect(jsonPath("$.token").doesNotExist())
                 .andExpect(jsonPath("$.reactivated").value(true));
     }
 

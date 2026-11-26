@@ -1,11 +1,14 @@
 package com.isaacggr.goldforge.controller;
 
+import com.isaacggr.goldforge.dto.auth.AuthenticatedSession;
 import com.isaacggr.goldforge.dto.auth.ForgotPasswordRequestDTO;
+import com.isaacggr.goldforge.dto.auth.GoogleLoginRequestDTO;
 import com.isaacggr.goldforge.dto.auth.LoginRequestDTO;
 import com.isaacggr.goldforge.dto.auth.LoginResponseDTO;
 import com.isaacggr.goldforge.dto.auth.ResetPasswordRequestDTO;
 import com.isaacggr.goldforge.dto.auth.VerifyEmailRequestDTO;
 import com.isaacggr.goldforge.exception.ErrorResponse;
+import com.isaacggr.goldforge.service.AuthCookieService;
 import com.isaacggr.goldforge.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -14,6 +17,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,19 +26,21 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/auth")
-@Tag(name = "Autenticação", description = "Endpoints para login, ativação de conta e recuperação de senha")
+@Tag(name = "Autenticação", description = "Endpoints para login, logout, ativação de conta e recuperação de senha")
 public class AuthController {
 
     private final AuthService authService;
+    private final AuthCookieService authCookieService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, AuthCookieService authCookieService) {
         this.authService = authService;
+        this.authCookieService = authCookieService;
     }
 
     @PostMapping("/login")
     @Operation(
             summary = "Realizar login",
-            description = "Autentica o usuário com e-mail e senha e retorna o token JWT. Se a conta tiver sido excluída há no máximo 30 dias, ela é reativada automaticamente no login."
+            description = "Autentica o usuário com e-mail e senha e emite a sessão JWT em cookie HTTP-Only Same-Site. Se a conta tiver sido excluída há no máximo 30 dias, ela é reativada automaticamente no login."
     )
     @ApiResponse(responseCode = "200", description = "Login realizado com sucesso")
     @ApiResponse(responseCode = "401", description = "Credenciais inválidas ou conta expirada após 30 dias da exclusão",
@@ -41,8 +48,46 @@ public class AuthController {
     @ApiResponse(responseCode = "403", description = "E-mail pendente de confirmação antes do login",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
     public ResponseEntity<LoginResponseDTO> login(@RequestBody @Valid LoginRequestDTO dto) {
-        LoginResponseDTO response = authService.login(dto);
-        return ResponseEntity.ok(response);
+        AuthenticatedSession session = authService.login(dto);
+        ResponseCookie cookie = authCookieService.createAuthCookie(
+                session.token(),
+                session.response().expiresIn()
+        );
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(session.response());
+    }
+
+    @PostMapping("/google")
+    @Operation(
+            summary = "Realizar login ou cadastro com Google",
+            description = "Autentica ou cadastra o usuário através do ID Token emitido pelo Google Identity Services, emitindo a sessão JWT em cookie HTTP-Only Same-Site."
+    )
+    @ApiResponse(responseCode = "200", description = "Login com Google realizado com sucesso")
+    @ApiResponse(responseCode = "401", description = "Token do Google inválido ou expirado",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    public ResponseEntity<LoginResponseDTO> loginWithGoogle(@RequestBody @Valid GoogleLoginRequestDTO dto) {
+        AuthenticatedSession session = authService.loginWithGoogle(dto);
+        ResponseCookie cookie = authCookieService.createAuthCookie(
+                session.token(),
+                session.response().expiresIn()
+        );
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(session.response());
+    }
+
+    @PostMapping("/logout")
+    @Operation(
+            summary = "Encerrar sessão (Logout)",
+            description = "Limpa o cookie HTTP-Only de autenticação no navegador do usuário."
+    )
+    @ApiResponse(responseCode = "204", description = "Sessão encerrada com sucesso")
+    public ResponseEntity<Void> logout() {
+        ResponseCookie logoutCookie = authCookieService.createLogoutCookie();
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, logoutCookie.toString())
+                .build();
     }
 
     @PostMapping("/verify-email")
@@ -69,7 +114,7 @@ public class AuthController {
     }
 
     @PostMapping("/reset-password")
-    @Operation(summary = "Redefinir senha com código", description = "Valida o código de 6 dígitos recebido por e-mail e atualiza a senha da conta com criptografia BCrypt")
+    @Operation(summary = "Redefinir senha com código", description = "Valida o código de 6 dígitos recebido por e-mail e atualiza a senha da conta com criptografia Argon2id")
     public ResponseEntity<Map<String, String>> resetPassword(@RequestBody @Valid ResetPasswordRequestDTO dto) {
         authService.resetPassword(dto);
         return ResponseEntity.ok(Map.of("message", "Senha redefinida com sucesso! Você já pode efetuar login com sua nova senha."));

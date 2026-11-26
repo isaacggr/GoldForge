@@ -3,14 +3,16 @@ package com.isaacggr.goldforge.service;
 import com.isaacggr.goldforge.domain.entity.User;
 import com.isaacggr.goldforge.domain.entity.VerificationToken;
 import com.isaacggr.goldforge.domain.enums.TokenType;
+import com.isaacggr.goldforge.dto.auth.AuthenticatedSession;
 import com.isaacggr.goldforge.dto.auth.ForgotPasswordRequestDTO;
+import com.isaacggr.goldforge.dto.auth.GoogleLoginRequestDTO;
 import com.isaacggr.goldforge.dto.auth.LoginRequestDTO;
-import com.isaacggr.goldforge.dto.auth.LoginResponseDTO;
 import com.isaacggr.goldforge.dto.auth.ResetPasswordRequestDTO;
 import com.isaacggr.goldforge.dto.auth.VerifyEmailRequestDTO;
 import com.isaacggr.goldforge.exception.BusinessException;
 import com.isaacggr.goldforge.exception.ForbiddenException;
 import com.isaacggr.goldforge.exception.UnauthorizedException;
+import com.isaacggr.goldforge.repository.UserNotificationPreferenceRepository;
 import com.isaacggr.goldforge.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +37,9 @@ class AuthServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private UserNotificationPreferenceRepository preferenceRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -46,6 +51,9 @@ class AuthServiceTest {
     @Mock
     private EmailService emailService;
 
+    @Mock
+    private GoogleTokenVerifierService googleTokenVerifierService;
+
     private AuthService authService;
     private final long expiration = 86400000;
     private User sampleUser;
@@ -54,10 +62,12 @@ class AuthServiceTest {
     void setUp() {
         authService = new AuthService(
                 userRepository,
+                preferenceRepository,
                 passwordEncoder,
                 tokenService,
                 verificationTokenService,
                 emailService,
+                googleTokenVerifierService,
                 expiration
         );
         sampleUser = new User("Isaac Gregorio", "isaac@example.com", "encodedPassword123");
@@ -66,7 +76,7 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("Deve realizar login com sucesso e retornar token JWT quando o e-mail estiver verificado")
+    @DisplayName("Deve realizar login com sucesso e retornar sessão com token JWT e metadados Cookie")
     void login_Success() {
         LoginRequestDTO dto = new LoginRequestDTO("isaac@example.com", "plainPassword123");
 
@@ -74,14 +84,52 @@ class AuthServiceTest {
         when(passwordEncoder.matches(dto.password(), sampleUser.getPasswordHash())).thenReturn(true);
         when(tokenService.generateToken(sampleUser)).thenReturn("fake.jwt.token");
 
-        LoginResponseDTO response = authService.login(dto);
+        AuthenticatedSession session = authService.login(dto);
 
-        assertNotNull(response);
-        assertEquals("fake.jwt.token", response.token());
-        assertEquals("Bearer", response.type());
-        assertEquals(expiration, response.expiresIn());
-        assertNull(response.reactivated());
+        assertNotNull(session);
+        assertEquals("fake.jwt.token", session.token());
+        assertEquals("Cookie", session.response().type());
+        assertEquals(expiration, session.response().expiresIn());
+        assertNull(session.response().reactivated());
         verify(tokenService).generateToken(sampleUser);
+    }
+
+    @Test
+    @DisplayName("Deve executar Lazy Rehashing e atualizar a senha para Argon2id quando upgradeEncoding for true")
+    void login_Success_ShouldExecuteLazyRehashing_WhenUpgradeEncodingIsTrue() {
+        LoginRequestDTO dto = new LoginRequestDTO("isaac@example.com", "plainPassword123");
+        String newArgon2Hash = "$argon2id$v=19$m=16384,t=2,p=1$fakeSalt$fakeArgon2Hash";
+
+        when(userRepository.findByEmail(dto.email())).thenReturn(Optional.of(sampleUser));
+        when(passwordEncoder.matches(dto.password(), sampleUser.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.upgradeEncoding(sampleUser.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.encode(dto.password())).thenReturn(newArgon2Hash);
+        when(tokenService.generateToken(sampleUser)).thenReturn("fake.jwt.token");
+
+        AuthenticatedSession session = authService.login(dto);
+
+        assertNotNull(session);
+        assertEquals("fake.jwt.token", session.token());
+        assertEquals(newArgon2Hash, sampleUser.getPasswordHash(), "A entidade User deve ter sua senha atualizada para o novo hash");
+        verify(passwordEncoder).encode("plainPassword123");
+        verify(userRepository).save(sampleUser);
+    }
+
+    @Test
+    @DisplayName("Não deve persistir atualização de senha quando upgradeEncoding for false")
+    void login_Success_ShouldNotRehash_WhenUpgradeEncodingIsFalse() {
+        LoginRequestDTO dto = new LoginRequestDTO("isaac@example.com", "plainPassword123");
+
+        when(userRepository.findByEmail(dto.email())).thenReturn(Optional.of(sampleUser));
+        when(passwordEncoder.matches(dto.password(), sampleUser.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.upgradeEncoding(sampleUser.getPasswordHash())).thenReturn(false);
+        when(tokenService.generateToken(sampleUser)).thenReturn("fake.jwt.token");
+
+        AuthenticatedSession session = authService.login(dto);
+
+        assertNotNull(session);
+        verify(passwordEncoder, never()).encode(any());
+        verify(userRepository, never()).save(any());
     }
 
     @Test
@@ -149,12 +197,12 @@ class AuthServiceTest {
         when(passwordEncoder.matches(dto.password(), sampleUser.getPasswordHash())).thenReturn(true);
         when(tokenService.generateToken(sampleUser)).thenReturn("reactivated.jwt.token");
 
-        LoginResponseDTO response = authService.login(dto);
+        AuthenticatedSession session = authService.login(dto);
 
         assertFalse(sampleUser.isDeleted());
         assertNull(sampleUser.getDeletedAt());
-        assertTrue(Boolean.TRUE.equals(response.reactivated()));
-        assertEquals("reactivated.jwt.token", response.token());
+        assertTrue(Boolean.TRUE.equals(session.response().reactivated()));
+        assertEquals("reactivated.jwt.token", session.token());
         verify(userRepository).save(sampleUser);
         verify(tokenService).generateToken(sampleUser);
     }
@@ -242,6 +290,72 @@ class AuthServiceTest {
 
         assertEquals("Código incorreto. Tentativas restantes: 4", exception.getMessage());
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Deve autenticar com sucesso conta existente via Google Login e ativar e-mail pendente")
+    void loginWithGoogle_ExistingUser_Success() {
+        GoogleLoginRequestDTO dto = new GoogleLoginRequestDTO("valid.google.id.token");
+        GoogleTokenVerifierService.GoogleUserData googleData =
+                new GoogleTokenVerifierService.GoogleUserData("isaac@example.com", "Isaac Google", true);
+
+        when(googleTokenVerifierService.verify("valid.google.id.token")).thenReturn(googleData);
+        when(userRepository.findByEmail("isaac@example.com")).thenReturn(Optional.of(sampleUser));
+        when(tokenService.generateToken(sampleUser)).thenReturn("jwt.google.existing");
+
+        AuthenticatedSession session = authService.loginWithGoogle(dto);
+
+        assertNotNull(session);
+        assertEquals("jwt.google.existing", session.token());
+        assertEquals("Cookie", session.response().type());
+        assertTrue(sampleUser.isEmailVerified());
+        verify(userRepository).save(sampleUser);
+    }
+
+    @Test
+    @DisplayName("Deve cadastrar automaticamente novo usuário com e-mail verificado via Google Login")
+    void loginWithGoogle_NewUser_CreatesAndAuthenticates() {
+        GoogleLoginRequestDTO dto = new GoogleLoginRequestDTO("valid.google.id.token.new");
+        GoogleTokenVerifierService.GoogleUserData googleData =
+                new GoogleTokenVerifierService.GoogleUserData("novo.google@example.com", "Novo Aventureiro", true);
+
+        when(googleTokenVerifierService.verify("valid.google.id.token.new")).thenReturn(googleData);
+        when(userRepository.findByEmail("novo.google@example.com")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("$argon2id$randomHash");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User u = invocation.getArgument(0);
+            ReflectionTestUtils.setField(u, "id", UUID.randomUUID());
+            return u;
+        });
+        when(tokenService.generateToken(any(User.class))).thenReturn("jwt.google.new");
+
+        AuthenticatedSession session = authService.loginWithGoogle(dto);
+
+        assertNotNull(session);
+        assertEquals("jwt.google.new", session.token());
+        assertEquals("Cookie", session.response().type());
+        verify(preferenceRepository).save(any());
+        verify(userRepository).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("Deve reativar conta excluída dentro de 30 dias via Google Login")
+    void loginWithGoogle_ReactivatesDeletedUser() {
+        GoogleLoginRequestDTO dto = new GoogleLoginRequestDTO("valid.google.id.token.reactivate");
+        GoogleTokenVerifierService.GoogleUserData googleData =
+                new GoogleTokenVerifierService.GoogleUserData("isaac@example.com", "Isaac Gregorio", true);
+
+        sampleUser.markAsDeleted();
+        when(googleTokenVerifierService.verify(dto.idToken())).thenReturn(googleData);
+        when(userRepository.findByEmail("isaac@example.com")).thenReturn(Optional.of(sampleUser));
+        when(tokenService.generateToken(sampleUser)).thenReturn("jwt.google.reactivated");
+
+        AuthenticatedSession session = authService.loginWithGoogle(dto);
+
+        assertNotNull(session);
+        assertFalse(sampleUser.isDeleted());
+        assertTrue(Boolean.TRUE.equals(session.response().reactivated()));
+        verify(userRepository).save(sampleUser);
     }
 }
 

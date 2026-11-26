@@ -27,7 +27,7 @@ import java.util.Arrays;
 import java.util.List;
 
 @Configuration
-@EnableConfigurationProperties(RateLimitProperties.class)
+@EnableConfigurationProperties({RateLimitProperties.class, AuthCookieProperties.class, GoogleAuthProperties.class})
 public class SecurityConfig {
 
     private final SecurityFilter securityFilter;
@@ -46,7 +46,7 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        return new Argon2WithBcryptFallbackPasswordEncoder();
     }
 
     @Bean
